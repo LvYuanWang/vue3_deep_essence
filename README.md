@@ -1,7 +1,3 @@
-# Vue3 实战
+# 虚拟dom的本质
 
-## 用户管理系统
-
-## Vue3 + Element-plus + Vue Route
-
-## 结合Element-plus组件 升级版的用户管理系统
+## 使用虚拟 DOM 是为了防止组件在 **重渲染** 时导致的性能恶化
