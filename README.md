@@ -1,420 +1,343 @@
-# 模板的本质
+# 数据拦截的本质
 
-- 渲染函数
-- 模板编译
-- 编译的时机
+## 数据拦截的方式
 
-## 渲染函数
+**什么是拦截？**
 
-渲染函数（ h ）调用后会返回虚拟 DOM 节点
+你想像一下你在路上开着车，从地点 A 前往地点 B. 本来能够一路畅通无阻，顺顺利利的到达地点 B，但是因为你路上不小心违反了交规，例如不小心开着远光灯一路前行，此时就会被警察拦截下来，对你进行批评教育加罚款。（满满的血泪史😢）
 
-文档地址：https://cn.vuejs.org/api/render-function.html#h
+这就是现实生活中的拦截，**在你做一件事情的中途将你打断，从而能够做一些额外的事情**。
 
-实际上，Vue 里面的单文件组件是会被一个 **模板编译器** 进行编译的，编译后的结果并不存在什么模板，而是会把模板编译为渲染函数的形式。
+**数据拦截**
 
-这意味着我们完全可以使用纯 JS 来书写组件，文件的内部直接调用渲染函数来描述你的组件视图。
-
-例如我们之前写过的 UserCard 这个组件，完全可以改写成纯 JS 的形式：
+所谓数据拦截，无外乎就是你在对数据进行操作，例如读数据、写数据的时候
 
 ```js
-import { defineComponent, h } from 'vue'
-import styles from './UserCard.module.css'
-export default defineComponent({
-  name: 'UserCard',
-  props: {
-    name: String,
-    email: String,
-    avatarUrl: String,
-  },
-  setup(props) {
-    // 下面我们使用了渲染函数的形式来描述了原本在模板中所描述的视图结构
-    return () =>
-      h(
-        'div',
-        {
-          class: styles.userCard,
-        },
-        [
-          h('img', {
-            class: styles.avatar,
-            src: props.avatarUrl,
-            alt: 'User avatar',
-          }),
-          h(
-            'div',
-            {
-              class: styles.userInfo,
-            },
-            [h('h2', props.name), h('p', props.email)],
-          ),
-        ],
-      )
+const obj = { name: '张三' }
+obj.name // 正常读数据，直接就读了
+obj.name = '李四' // 正常写数据，直接就写了
+obj.age = 18
+```
+
+我们需要**一种机制，在读写操作的中途进行一个打断，从而方便做一些额外的事情**。这种机制我们就称之为数据拦截。
+
+这种拦截打断的场景其实有很多，比如 Vue 或者 React 里面的生命周期钩子方法，这种钩子方法本质上也是一种拦截，在组件从初始化到正常渲染的时间线里，设置了几个拦截点，从而方便开发者做一些额外的事情。
+
+**JS中的数据拦截**
+
+接下来我们来看一下 JS 中能够实现数据拦截的方式有哪些？
+
+目前来讲，主要的方式有两种：
+
+1. Object.defineProperty：对应 Vue1.x、2.x 响应式
+2. Proxy：对应 Vue3.x 响应式
+
+简单复习一下这两个 API.
+
+1. Object.defineProperty
+
+这是 Object 上面的一个静态方法，用于**给一个对象添加新的属性**，除此之外**还能够对该属性进行更为详细的配置**。
+
+```js
+Object.defineProperty(obj, prop, descriptor)
+```
+
+- obj ：要定义属性的对象
+- prop：一个字符串或 [`Symbol`](https://developer.mozilla.org/zh-CN/docs/Web/JavaScript/Reference/Global_Objects/Symbol)，指定了要定义或修改的属性键。
+- descriptor：属性描述符。
+
+重点其实是在属性描述符，这个参数是一个对象，可以描述的信息有：
+
+- value 设置属性值，默认值为 undefined.
+- writable 设置属性值是否可写，默认值为 false.
+- enumerable 设置属性是否可枚举，默认为 false.
+- configurable 是否可以配置该属性，默认值为 false. 这里的配置主要是针对这么一些点：
+  - 该属性的类型是否能在数据属性和访问器属性之间更改
+  - 该属性是否能删除
+  - 描述符的其他属性是否能被更改
+- get 取值函数，默认为 undefined.
+- set 存值函数，默认为 undefined
+
+数据属性：value、writable
+
+访问器属性：getter、setter
+
+数据属性和访问器属性默认是互斥。
+
+也就是说，默认情况下，使用 Object.defineProperty( ) 添加的属性是不可写、不可枚举和不可配置的。
+
+```js
+function Student() {
+  let stuName = '张三'
+  Object.defineProperty(this, 'name', {
+    get() {
+      return stuName
+    },
+    set(value) {
+      if (!isNaN(value)) {
+        stuName = '张三'
+      } else {
+        stuName = value
+      }
+    },
+  })
+}
+const stu = new Student()
+console.log(stu.name)
+stu.name = '李四'
+console.log(stu.name)
+stu.name = 100
+console.log(stu.name)
+```
+
+2. Proxy
+
+另外一种方式是使用 Proxy. 这是 ES6 新提供的一个 API，通过**创建代理对象的方式来实现拦截**。
+
+```js
+const p = new Proxy(target, handler)
+```
+
+- target : 目标对象，可以是任何类型的对象，包括数组，函数。
+- handler: 定义代理对象的行为。
+- 返回值：返回的就是一个代理对象，之后外部对属性的读写都是针对代理对象来做的
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-03-27-071734.png" alt="image-20240327151733943" style="zoom:50%;" />
+
+```js
+function Student() {
+  const obj = {
+    name: '张三',
+  }
+  return new Proxy(obj, {
+    get(obj, prop) {
+      return obj[prop] + '是个好学生'
+    },
+    set(obj, prop, value) {
+      if (!isNaN(value)) {
+        obj[prop] = '张三'
+      } else {
+        obj[prop] = value
+      }
+    },
+  })
+}
+const stu = new Student() // stu 拿到的就是代理对象
+console.log(stu.name) // 张三是个好学生
+stu.name = '李四'
+console.log(stu.name) // 李四是个好学生
+stu.name = 100
+console.log(stu.name) // 张三是个好学生
+```
+
+## 两者共同点
+
+**1. 都可以针对对象成员拦截**
+
+无论使用哪一种方式，都能拦截读取操作
+
+```js
+const obj = {}
+let _data = '这是一些数据'
+Object.defineProperty(obj, 'data', {
+  get() {
+    console.log('读取data的操作被拦截了')
+    return _data
   },
 })
+console.log(obj.data)
 ```
-
-```css
-.userCard {
-  display: flex;
-  align-items: center;
-  background-color: #f9f9f9;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  padding: 10px;
-  margin: 10px 0;
-}
-
-.avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  margin-right: 15px;
-}
-
-.userInfo h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #333;
-}
-
-.userInfo p {
-  margin: 5px 0 0;
-  font-size: 16px;
-  color: #666;
-}
-```
-
-甚至也可以使用 Vue2 经典的 options API 的语法来写：
 
 ```js
-import styles from './UserCard.module.css'
-import { h } from 'vue'
-export default {
-  name: 'UserCard',
-  props: {
-    name: String,
-    email: String,
-    avatarUrl: String,
+const obj = {
+  data: '这是一些数据',
+  name: '张三',
+}
+const p = new Proxy(obj, {
+  get(obj, prop) {
+    console.log(`${prop}的读取操作被拦截了`)
+    return obj[prop]
   },
-  render() {
-    return h(
-      'div',
-      {
-        class: styles.userCard,
-      },
-      [
-        h('img', {
-          class: styles.avatar,
-          src: this.avatarUrl,
-          alt: 'User avatar',
-        }),
-        h(
-          'div',
-          {
-            class: styles.userInfo,
-          },
-          [h('h2', this.name), h('p', this.email)],
-        ),
-      ],
-    )
+})
+console.log(p.data)
+console.log(p.name)
+```
+
+两者都可以拦截写入操作：
+
+```js
+const obj = {}
+let _data = '这是一些数据'
+Object.defineProperty(obj, 'data', {
+  get() {
+    console.log('读取data的操作被拦截了')
+    return _data
+  },
+  set(value) {
+    console.log('设置data的操作被拦截了')
+    _data = value
+  },
+})
+obj.data = '这是新的数据'
+console.log(obj.data)
+```
+
+```js
+const obj = {
+  data: '这是一些数据',
+  name: '张三',
+}
+const p = new Proxy(obj, {
+  get(obj, prop) {
+    console.log(`${prop}的读取操作被拦截了`)
+    return obj[prop]
+  },
+  set(obj, prop, value) {
+    // 前面相当于是拦截下这个操作后，我们要做的额外的操作
+    console.log(`${prop}的设置操作被拦截了`)
+    // 后面就是真实的操作
+    obj[prop] = value
+  },
+})
+p.data = '这是新的数据'
+p.name = '李四'
+```
+
+**2. 都可以实现深度拦截**
+
+两者在实现深度拦截的时候，需要自己书写递归来实现，但是总而言之是能够实现深度拦截的。
+
+```js
+const data = {
+  level1: {
+    level2: {
+      value: 100,
+    },
   },
 }
-```
 
-至此我们就知道了，Vue 里面之所以提供模板的方式，是为了让开发者在描述视图的时候，更加的轻松。Vue 在运行的时候本身是不需要什么模板的，它只需要渲染函数，调用这些渲染函数后所得到的虚拟 DOM.
-
-作为一个框架的设计者，你必须要思考：你是框架少做一些，让用户的心智负担更重一些，还是说你的框架多做一些，让用户的心智负担更少一些。
-
-## 模板的编译
-
-**单文件组件中所书写的模板，对于模板编译器来讲，就是普通的字符串。**
-
-模板内容：
-
-```vue
-<template>
-  <div>
-    <h1 :id="someId">Hello</h1>
-  </div>
-</template>
-```
-
-对于模板编译器来讲，仅仅是一串字符串：
-
-```js
-'<template><div><h1 :id="someId">Hello</h1></div></template>'
-```
-
-模板编译器需要对上面的字符串进行操作，最终生成的结果：
-
-```js
-function render() {
-  return h('div', [h('h1', { id: someId }, 'Hello')])
-}
-```
-
-模板编译器在对模板字符串进行编译的时候，是一点一点转换而来的，整个过程：
-
-![image-20231113095532166](https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2023-11-13-015532.png)
-
-- 解析器：负责将模板字符串解析为对应的模板AST
-- 转换器：负责将模板AST转换为 JS AST
-- 生成器：将 JS AST 生成最终的渲染函数
-
-每一个部件都依赖于上一个部件的执行结果。
-
-假设有这么一段模板：
-
-```vue
-<div>
-	<p>Vue</p>
-  <p>React</p>
-</div>
-```
-
-对于模板编译器来讲，就是一段字符串：
-
-```js
-'<div><p>Vue</p><p>React</p></div>'
-```
-
-首先是解析器，拿到这串字符串，对这个字符串进行解析，得到一个一个的 token.
-
-```js
-;[
-  { type: 'tag', name: 'div' },
-  { type: 'tag', name: 'p' },
-  { type: 'text', content: 'Vue' },
-  { type: 'tagEnd', name: 'p' },
-  { type: 'tag', name: 'p' },
-  { type: 'text', content: 'React' },
-  { type: 'tagEnd', name: 'p' },
-  { type: 'tagEnd', name: 'div' },
-]
-```
-
-接下来解析器还需要根据所得到的 token 来生成抽象语法树（模板的AST）
-
-转换出来的 AST：
-
-```js
-{
-  "type": "Root",
-  "children": [
-    {
-      "type": "Element",
-      "tag": "div",
-      "children": [
-        {
-          "type": "Element",
-          "tag": "p",
-          "children": [
-              {
-                "type": "Text",
-                "content": "Vue"
-              }
-          ]
-        },
-        {
-          "type": "Element",
-          "tag": "p",
-          "children": [
-              {
-                "type": "Text",
-                "content": "React"
-              }
-          ]
-        }
-      ]
+function deepDefineProperty(obj) {
+  for (let key in obj) {
+    // 首先判断是否是自身属性以及是否为对象
+    if (obj.hasOwnProperty(key) && typeof obj[key] === 'object') {
+      // 递归处理
+      deepDefineProperty(obj[key])
     }
-  ]
+    // 缓存一下属性值
+    let _value = obj[key]
+    Object.defineProperty(obj, key, {
+      get() {
+        console.log(`读取${key}属性`)
+        return _value
+      },
+      set(value) {
+        console.log(`设置${key}属性`)
+        _value = value
+      },
+      configurable: true,
+      enumerable: true,
+    })
+  }
 }
+deepDefineProperty(data)
+console.log(data.level1.level2.value)
+console.log('----------------')
+data.level1.level2.value = 200
 ```
-
-至此解析器的工作就完成了。
-
-接下来就是转换器登场，它需要将上一步得到的模板 AST 转换为 JS AST：
 
 ```js
-{
-  "type": "FunctionDecl",
-  "id": {
-      "type": "Identifier",
-      "name": "render"
-  },
-  "params": [],
-  "body": [
-      {
-          "type": "ReturnStatement",
-          "return": {
-              "type": "CallExpression",
-              "callee": {"type": "Identifier", "name": "h"},
-              "arguments": [
-                  { "type": "StringLiteral", "value": "div"},
-                  {"type": "ArrayExpression","elements": [
-                        {
-                            "type": "CallExpression",
-                            "callee": {"type": "Identifier", "name": "h"},
-                            "arguments": [
-                                {"type": "StringLiteral", "value": "p"},
-                                {"type": "StringLiteral", "value": "Vue"}
-                            ]
-                        },
-                        {
-                            "type": "CallExpression",
-                            "callee": {"type": "Identifier", "name": "h"},
-                            "arguments": [
-                                {"type": "StringLiteral", "value": "p"},
-                                {"type": "StringLiteral", "value": "React"}
-                            ]
-                        }
-                    ]
-                  }
-              ]
-          }
+function deepProxy(obj) {
+  return new Proxy(obj, {
+    get(obj, prop) {
+      console.log(`读取了${prop}属性`)
+      if (typeof obj[prop] === 'object') {
+        // 递归的再次进行代理
+        return deepProxy(obj[prop])
       }
-  ]
+      return obj[prop]
+    },
+    set(obj, prop, value) {
+      console.log(`设置了${prop}属性`)
+      if (typeof value === 'object') {
+        return deepProxy(value)
+      }
+      obj[prop] = value
+    },
+  })
 }
+const proxyData = deepProxy(data)
+console.log(proxyData.level1.level2.value)
+console.log('----------------')
+proxyData.level1.level2.value = 200
 ```
 
-最后就是生成器，根据上一步所得到的 JS AST，生成具体的 JS 代码：
+## 两者差异点
+
+**1. 拦截的广度**
+
+Vue3 的响应式，从原本的 Object.defineProperty 替换为了 Proxy.
+
+之所以替换，就是因为**两者在进行拦截的时候，无论是拦截的目标还是能够拦截的行为，都是不同的**：
+
+- Object.defineProperty 是**针对对象特定属性**的**读写操作**进行拦截
+- Proxy 则是**针对一整个对象**的**多种操作**，包括**属性的读取、赋值、属性的删除、属性描述符的获取和设置、原型的查看、函数调用等行为**能够进行拦截。
+
+如果是使用 Object.defineProperty ，一旦后期给对象新增属性，是无法拦截到的，因为 Object.defineProperty 在设置拦截的时候是针对的特定属性，所以新增的属性无法被拦截。
+
+但是 Proxy 就不一样，它是针对整个对象，后期哪怕新增属性也能够被拦截到。
+
+另外，相比 Object.defineProperty，Proxy 能够拦截的行为也更多
 
 ```js
-function render() {
-  return h('div', [h('p', 'Vue'), h('p', 'React')])
+function deepProxy(obj) {
+  return new Proxy(obj, {
+    get(obj, prop) {
+      console.log(`读取了${prop}属性`)
+      if (typeof obj[prop] === 'object') {
+        // 递归的再次进行代理
+        return deepProxy(obj[prop])
+      }
+      return obj[prop]
+    },
+    set(obj, prop, value) {
+      console.log(`设置了${prop}属性`)
+      if (typeof value === 'object') {
+        return deepProxy(value)
+      }
+      obj[prop] = value
+    },
+    deleteProperty(obj, prop) {
+      console.log(`删除了${prop}属性`)
+      delete obj[prop]
+    },
+    getPrototypeOf(obj) {
+      console.log('拦截获取原型')
+      return Object.getPrototypeOf(obj)
+    },
+    setPrototypeOf(obj, proto) {
+      console.log('拦截设置原型')
+      return Object.setPrototypeOf(obj, proto)
+    },
+  })
 }
 ```
 
-下面是一个模板编译器大致的结构：
+理解了上面的差异点之后，你就能够完全理解 Vue2 的响应式会有什么样的缺陷：
 
-```js
-function compile(template) {
-  // 1. 解析器
-  const ast = parse(template)
-  // 2. 转换器：将模板 AST 转换为 JS AST
-  transform(ast)
-  // 3. 生成器
-  const code = genrate(ast)
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-17-025746.png" alt="image-20240517105745592" style="zoom:50%;" />
 
-  return code
-}
-```
+**2. 性能上的区别**
 
-## 编译的时机
+接下来是性能方面的区别，究竟哪种方式的性能更高呢？
 
-整体来讲会有两种情况：
+**大多数情况下，Proxy 是高效的**，但是不能完全断定 Proxy 就一定比 Object.defineProperty 效率高，因为这还是得看具体的场景。
 
-1. 运行时编译
-2. 预编译
+如果你**需要拦截的操作类型较少，且主要集中在某些特定属性上，那么 Object.defineProperty 可能提供更好的性能**。
 
-**1. 运行时编译**
+- 但是只针对某个特定属性的拦截场景较少，一般都是需要针对一个对象的所有属性进行拦截
+- 此时如果需要拦截的对象结构复杂（如需要递归到嵌套对象）或者需要拦截的操作种类繁多，那么使用这种方式就会变得复杂且效率低下。
 
-例如下面的代码，是直接通过 CDN 的方式引入的 Vue
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-    <style>
-      .user-card {
-        display: flex;
-        align-items: center;
-        background-color: #f9f9f9;
-        border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        padding: 10px;
-        margin: 10px 0;
-      }
-      .avatar {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        margin-right: 15px;
-      }
-      .user-info h2 {
-        margin: 0;
-        font-size: 20px;
-        color: #333;
-      }
-      .user-info p {
-        margin: 5px 0 0;
-        font-size: 16px;
-        color: #666;
-      }
-    </style>
-  </head>
-  <body>
-    <!-- 书写模板 -->
-    <div id="app">
-      <user-card :name="name" :email="email" :avatar-url="avatarUrl" />
-    </div>
-
-    <template id="user-card-template">
-      <div class="user-card">
-        <img :src="avatarUrl" alt="User avatar" class="avatar" />
-        <div class="user-info">
-          <h2>{{ name }}</h2>
-          <p>{{ email }}</p>
-        </div>
-      </div>
-    </template>
-
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script>
-      const { createApp } = Vue
-
-      const UserCard = {
-        name: 'UserCard',
-        props: {
-          name: String,
-          email: String,
-          avatarUrl: String,
-        },
-        template: '#user-card-template',
-      }
-
-      createApp({
-        components: {
-          UserCard,
-        },
-        data() {
-          return {
-            name: 'John Doe',
-            email: 'john@example',
-            avatarUrl: './yinshi.jpg',
-          }
-        },
-      }).mount('#app')
-    </script>
-  </body>
-</html>
-```
-
-在上面的例子中，也会涉及到模板代码以及模板的编译，那么此时的模板编译就是在运行时进行的。
-
-**2. 预编译**
-
-预编译是发生在工程化环境下面。
-
-所谓预编译，指的是工程打包过程中就完成了模板的编译工作，浏览器拿到的是打包后的代码，是完全没有模板的。
-
-这里推荐一个插件：vite-plugin-inspect
-
-安装该插件后在 vite.config.js 配置文件中简单配置一下：
-
-```js
-// vite.config.js
-import Inspect from 'vite-plugin-inspect'
-
-export default {
-  plugins: [Inspect()],
-}
-```
-
-之后就可以在 http://localhost:5173/\_\_inspect/ 里面看到每一个组件编译后的结果。
+如果你需要全面地拦截对象的各种操作，那么 Proxy 能提供更强大和灵活的拦截能力，尽管可能有一些轻微的性能开销。
 
 ---
 
