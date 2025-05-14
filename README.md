@@ -1,172 +1,420 @@
-# 响应式数据的本质
+# 响应式的本质
 
-什么是响应式数据？其实就是**被拦截的对象**。
+- 依赖收集：所谓依赖收集，其实就是收集的一些函数。因为当数据发生变化的时候，需要重新执行这些函数，因此需要提前收集起来。
+- 派发更新：所谓派发更新，就是通知被收集了的函数，现在数据已经更新了，你们需要重新执行一遍。
 
-当对象被拦截后，针对对象的各种操作也就能够被拦截下来，从而让我们有机会做一些额外的事情。因此只要是被拦截了对象，就可以看作是一个响应式数据。
+**数据**
 
-在 Vue3 中，创建响应式数据的方式，有 **ref** 和 **reactive** 两种，**这两个 API 的背后，就是就是针对对象添加拦截**。
+当数据发生变换会通知一些函数重新执行，这里的数据指的就是**响应式数据**。
 
-在 JS 中，要实现数据拦截，要么是 Object.defineProperty，要么是 Proxy，而这两者都是针对**对象**来进行操作的。
+在 Vue 里面，那就是指：
 
-ref 以及 reactive 源码：
+- ref
+- reactive
+- props
+- computed
 
-```js
-class RefImpl<T> {
-  private _value: T
-  private _rawValue: T
+这几种方式所得到的数据就是响应式数据。
 
-  public dep?: Dep = undefined
-  public readonly __v_isRef = true
+**依赖**
 
-  constructor(
-    value: T,
-    public readonly __v_isShallow: boolean,
-  ) {
-    this._rawValue = __v_isShallow ? value : toRaw(value)
-    // 有可能是原始值，有可能是 reactive 返回的 proxy
-    this._value = __v_isShallow ? value : toReactive(value)
-  }
+谁和谁之间有依赖关系？
 
-  get value() {
-    // 收集依赖 略
-    return this._value
-  }
+**响应式数据**和**函数**之间有依赖关系。**当函数在运行期间用到了响应式数据，那么我们可以称之为两者之间有依赖**。
 
-  set value(newVal) {
-    // 略
-  }
-}
+但还有一点需要明确，那就是什么是用到？
 
-// 判断是否是对象，是对象就用 reactive 来处理，否则返回原始值
-export const toReactive = <T extends unknown>(value: T): T =>
-  isObject(value) ? reactive(value) : value
+**所谓用到，是指函数在运行期间出现了读取成员被拦截的情况，这样才算是用到**。
 
-// 回忆 ref 的用法
-const state = ref(5);
-state.value;
-```
+完整表述：**函数在运行期间，出现了读取响应式数据被拦截的情况，我们就称之为两者之间产生了依赖，这个依赖（也就是一个对应关系）是会被收集的，方便响应式数据发生变化时重新执行对应的函数**。
 
-```js
-function createReactiveObject(
-  target: Target,
-  isReadonly: boolean,
-  baseHandlers: ProxyHandler<any>,
-  collectionHandlers: ProxyHandler<any>,
-  proxyMap: WeakMap<Target, any>,
-) {
-  // ...
-
-  // 创建 Proxy 代理对象
-  const proxy = new Proxy(
-    target,
-    targetType === TargetType.COLLECTION ? collectionHandlers : baseHandlers,
-  )
-  proxyMap.set(target, proxy)
-  return proxy
-}
-
-export function reactive(target: object) {
-  // ...
-
-  return createReactiveObject(
-    target,
-    false,
-    mutableHandlers,
-    mutableCollectionHandlers,
-    reactiveMap,
-  )
-}
-```
-
-从源码中我们就可以看出，**ref 和 reactive 在实现响应式上面的策略是有所不同**：
-
-- ref：使用 Object.defineProperty + Proxy 方式
-- reactive：使用 Proxy 方式
-
-这节课还有一个非常重要的知识点，就是要 **学会判断某个操作是否会产生拦截**。因为只有产生拦截，才会有后续的依赖收集和派发更新一类的操作。
-
-简单复习上节课的知识，有两个 API 能够实现拦截：
-
-1. Object.defineProperty
-   - 特定的属性的读取
-   - 特定的属性的赋值
-2. 操作 Proxy 代理对象的成员
-   - 读取
-   - 赋值
-   - 新增
-   - 删除
-
-测试题目：
+练习：
 
 ```js
 // demo1
-let state = ref(1)
-state // 不会拦截
-console.log(state) // 不会拦截
-console.log(state.value) // 会拦截，因为访问了 value 属性
-console.log(state.a) // 不会拦截
-state.a = 3 // 不会拦截
-state.value = 3 // 会拦截
-delete state.value // 不会拦截
-state = 3 // 不会拦截
+var a;
+function foo() {
+  console.log(a);
+}
+// 没有依赖关系，a 不是响应式数据
 ```
 
 ```js
 // demo2
-let state = ref({ a: 1 })
-state // 不会拦截
-console.log(state) // 不会拦截
-console.log(state.value) // 会拦截
-console.log(state.a) // 不会拦截
-console.log(state.value.a) // 会拦截，拦截到 value 和 a 属性的 get 操作
-state.a = 3 // 不会拦截
-state.value.a = 3 // 会拦截，value 的 get 操作，a 属性的 set 操作
-delete state.value.a // 会拦截，value 的 get 操作，a 属性的 delete 操作
-state.value = 3 // 会拦截，value 的 set 操作
-delete state.value // 不会拦截
-state = 3 // 不会拦截
+var a = ref(1);
+function foo() {
+  console.log(a);
+}
+// 没有依赖关系，虽然用到了响应式数据，但是没有出现读取拦截的情况
 ```
 
 ```js
 // demo3
-let state = reactive({})
-state // 不会拦截
-console.log(state) // 不会拦截
-console.log(state.a) // 会拦截
-state.a = 3 // 会拦截
-state.a = {
-  b: {
-    c: 3,
-  },
-} // 会拦截，拦截到 a 属性的 set 操作
-console.log('-------------')
-console.log(state.a.b.c) // 会拦截
-delete state.a.b // 会拦截 a 是 get 操作，b 是 delete 操作
+var a = ref(1);
+function foo() {
+  console.log(a.value);
+}
+// 有依赖关系，foo 依赖 value 属性
 ```
 
 ```js
 // demo4
-const state = ref({ a: 1 })
-const k = state.value
-console.log('-------------')
-console.log(k) // 不会拦截，k 相当于是一个 proxy 对象，没有针对成员进行操作
-k.a = 3 // 会拦截，因为 k 是一个 proxy 对象，对 k 的成员进行操作会触发代理的 set 操作
-const n = k.a // 会拦截，因为访问了 k 的成员 a，会触发代理的 get 操作
-console.log('-------------')
-console.log(n)
+var a = ref({ b: 1 });
+const k = a.value;
+const n = k.b;
+function foo() {
+  a;
+  a.value;
+  k.b;
+  n;
+}
+// 有依赖关系
+// foo 依赖 a 的 value 属性
+// foo 依赖 k 的 b 属性
 ```
 
 ```js
 // demo5
-const arr = reactive([1, 2, 3])
-arr // 不会拦截
-arr.length // 会拦截
-arr[0] // 会拦截，拦截 0 的 get 操作
-arr[0] = 3 // 会拦截，拦截 0 的 set 操作
-arr.push(4) // 会被拦截
+var a = ref({ b: 1 });
+const k = a.value;
+const n = k.b;
+function foo() {
+  a;
+  k.b;
+  n;
+}
+// 有依赖关系
+// foo 依赖 k 的 b 属性
 ```
 
-再次强调，**一定要学会去判断针对一个对象进行操作的时候，是否会发生拦截，这一点非常重要**‼️
+```js
+// demo6
+var a = ref({ b: 1 });
+const k = a.value;
+const n = k.b;
+function foo() {
+  a;
+  a.value.b;
+  n;
+}
+// 有依赖关系
+// foo 依赖 a 的 value 以及 b 属性
+```
+
+```js
+// demo7
+var a = ref({ b: 1 });
+const k = a.value;
+const n = k.b;
+function foo() {
+  function fn2() {
+    a;
+    a.value.b;
+    n;
+  }
+  fn2();
+}
+// 有依赖关系
+// foo 依赖 a 的 value 以及 b 属性
+```
+
+总而言之：**只需要判断在函数的运行期间，是否存在读取操作行为的拦截，只要存在这种类型的拦截，那么该函数就和该响应式数据存在依赖关系**。
+
+不过，有一种情况需要注意，那就是**异步**。**如果在函数的运行期间存在异步代码，那么之后的代码统统不看了**。
+
+```js
+// demo8
+var a = ref({ b: 1 });
+const k = a.value;
+const n = k.b;
+async function foo() {
+  a;
+  a.value; // 产生依赖，依赖 value 属性
+  await 1;
+  k.b; // 没有依赖，因为它是异步后面的代码
+  n;
+}
+```
+
+**函数**
+
+**函数必须是被监控的函数**。
+
+- effect：这是 Vue3 源码内部的底层实现，后期会介绍
+- watchEffect
+- watch
+- 组件渲染函数
+
+因此最后总结一下：**<u>只有被监控的函数，在它的同步代码运行期间，读取操作被拦截的响应式数据，才会建立依赖关系，建立了依赖关系之后，响应式数据发生变化，对应的函数才会重新执行</u>**。
+
+练习：
+
+```js
+// demo1
+import { ref, watchEffect } from "vue";
+const state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  // 首先判断依赖关系
+  console.log("运行");
+  state; // 没有依赖关系产生
+  state.value; // 会产生依赖关系，依赖 value 属性
+  state.value.a; // 会产生依赖关系，依赖 value 和 a 属性
+  n; // 没有依赖关系
+});
+setTimeout(() => {
+  state.value = { a: 3 }; // 要重新运行
+}, 500);
+```
+
+```js
+// demo2
+import { ref, watchEffect } from "vue";
+const state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state;
+  state.value; // value
+  state.value.a; // value a
+  n;
+});
+setTimeout(() => {
+  //   state.value; // 不会重新运行
+  state.value.a = 1; // 不会重新运行
+}, 500);
+```
+
+```js
+// demo3
+import { ref, watchEffect } from "vue";
+const state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state;
+  state.value; // value
+  state.value.a; // value、a
+  n;
+});
+setTimeout(() => {
+  k.a = 2; // 这里相当于是操作了 proxy 对象的成员 a
+  // 要重新运行
+  // 如果将上面的 state.value.a; 这句话注释点，就不会重新运行
+}, 500);
+```
+
+```js
+// demo4
+import { ref, watchEffect } from "vue";
+const state = ref({ a: 1 });
+const k = state.value;
+let n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state;
+  state.value;
+  state.value.a;
+  n;
+});
+setTimeout(() => {
+  n++; // 不会重新运行
+}, 500);
+```
+
+```js
+// demo5
+import { ref, watchEffect } from "vue";
+const state = ref({ a: 1 });
+const k = state.value;
+let n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state;
+  state.value;
+  state.value.a;
+  n;
+});
+setTimeout(() => {
+  state.value.a = 100; // 要重新运行
+}, 500);
+```
+
+```js
+// demo6
+import { ref, watchEffect } from "vue";
+let state = ref({ a: 1 });
+const k = state.value;
+let n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state;
+  state.value;
+  state.value.a;
+  n;
+});
+setTimeout(() => {
+  state = 100; // 不要重新运行
+}, 500);
+```
+
+```js
+// demo7
+import { ref, watchEffect } from "vue";
+const state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state;
+  state.value; // value 会被收集
+  n;
+});
+setTimeout(() => {
+  state.value.a = 100; // 不会重新执行
+}, 500);
+```
+
+```js
+// demo8
+import { ref, watchEffect } from "vue";
+let state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state.value.a; // value、a
+});
+setTimeout(() => {
+  state.value = { a: 1 }; // 要重新运行
+}, 500);
+```
+
+```js
+// demo9
+import { ref, watchEffect } from "vue";
+const state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state.value.a = 2; // 注意这里的依赖仅仅只有 value 属性
+});
+setTimeout(() => {
+  //   state.value.a = 100; // 不会重新运行的
+  state.value = {}; // 要重新运行
+}, 500);
+```
+
+```js
+// demo10
+import { ref, watchEffect } from "vue";
+let state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state;
+  state.value.a; // value、a
+  n;
+});
+setTimeout(() => {
+  state.value.a = 2; // 要重新运行
+}, 500);
+setTimeout(() => {
+  //   k.a = 3; // 要重新运行
+  k.a = 2; // 因为值没有改变，所以不会重新运行
+}, 1000);
+```
+
+```js
+// demo11
+import { ref, watchEffect } from "vue";
+let state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state.value.a; // value、a
+});
+setTimeout(() => {
+  state.value = { a: 1 }; // 要重新运行
+}, 500);
+setTimeout(() => {
+  k.a = 3; // 这里不会重新运行，因为前面修改了 state.value，不再是同一个代理对象
+}, 1000);
+```
+
+```js
+// demo12
+import { ref, watchEffect } from "vue";
+let state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state.value.a; // value、a
+});
+setTimeout(() => {
+  state.value = { a: 1 }; // 要重新执行
+}, 500);
+setTimeout(() => {
+  state.value.a = 2; // 要重新执行
+}, 1000);
+```
+
+```js
+// demo13
+import { ref, watchEffect } from "vue";
+let state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state.value.a; // value、a
+});
+setTimeout(() => {
+  state.value = { a: 1 }; // 重新执行
+}, 500);
+setTimeout(() => {
+  state.value.a = 1; // 不会重新执行，因为值没有变化
+}, 1500);
+```
+
+```js
+// demo14
+import { ref, watchEffect } from "vue";
+let state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+watchEffect(() => {
+  console.log("运行");
+  state.value.a; // value、a
+  k.a; // 返回的 proxy 对象的 a 成员
+});
+setTimeout(() => {
+  state.value = { a: 1 }; // 要重新运行
+}, 500);
+setTimeout(() => {
+  k.a = 3; // 会重新执行
+}, 1000);
+setTimeout(() => {
+  state.value.a = 4; // 会重新执行
+}, 1500);
+```
+
+在这节课的最后，我们再对响应式的本质做一个完整的总结：
+
+**<u>所谓响应式，背后其实就是函数和数据的一组映射，当数据发生变化，会将该数据对应的所有函数全部执行一遍。当然这里的数据和函数都是有要求的。数据是响应式数据，函数是被监控的函数。</u>**
+
+**<u>收集数据和函数的映射关系在 Vue 中被称之为依赖收集，数据变化通知映射的函数重新执行被称之为派发更新。</u>**
+
+什么时候会产生依赖收集？
+
+**<u>只有被监控的函数，在它的同步代码运行期间，读取操作被拦截的响应式数据，才会建立依赖关系，建立了依赖关系之后，响应式数据发生变化，对应的函数才会重新执行</u>**。
 
 ---
 
