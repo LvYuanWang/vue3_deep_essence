@@ -1,420 +1,113 @@
-# 模板的本质
+# 响应式和组件渲染
 
-- 渲染函数
-- 模板编译
-- 编译的时机
+回顾一下之前讲的内容：
 
-## 渲染函数
+- 模板的本质：对应的就是 render 渲染**函数**，该函数执行之后，会返回虚拟 DOM，这是一种用来描述真实 DOM 的数据结构。
+- 响应式的本质：当数据发生变化的时候，依赖该数据的**函数**重新运行。
 
-渲染函数（ h ）调用后会返回虚拟 DOM 节点
+假设 render 函数运行期间用到了响应式数据会怎么样？
 
-文档地址：https://cn.vuejs.org/api/render-function.html#h
+结果很简单，那就是这个 render 函数会和响应式数据关联起来，当响应式数据发生变化的时候，所关联的 render 函数会重新运行，从而得到新的虚拟 DOM 结构，然后渲染器会根据新的虚拟 DOM 结构去更新真实 DOM 结构，从而在视觉感官上看到的是界面的变化。
 
-实际上，Vue 里面的单文件组件是会被一个 **模板编译器** 进行编译的，编译后的结果并不存在什么模板，而是会把模板编译为渲染函数的形式。
+> 这里说是重新运行 render，其实都还不是最准确的表达，实际上源码内部是和 updateComponent 方法进行的关联，而该方法的内部调用了 render 函数。
 
-这意味着我们完全可以使用纯 JS 来书写组件，文件的内部直接调用渲染函数来描述你的组件视图。
+**再看模板编译**
 
-例如我们之前写过的 UserCard 这个组件，完全可以改写成纯 JS 的形式：
+App.vue
+
+```vue
+<template>
+  <div>{{ name }}</div>
+  <div>{{ age }}</div>
+</template>
+
+<script setup>
+import { ref } from 'vue'
+let name = ref('Bill')
+let age = ref(18)
+</script>
+```
+
+在上面的代码中，模板用到了两个响应式数据，在模板中使用 ref 是会自动解包 value 的，因此这里就相当于在读取 vlaue 值，读取 value 就会产生读取的拦截，然后这两个响应式数据就会被模板背后所对应的渲染函数关联起来，有了依赖关系。
+
+有了依赖关系之后，响应式数据的变化就会导致渲染函数（被监控的函数）重新执行，得到新的虚拟 DOM，从而 UI 得到更新。
+
+下面是通过 vite-plugin-inspect 插件进行编译分析，从而验证上面的说法：
+
+![image-20240524095001844](https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-24-015001.png)
+
+在 setup 函数中定义了响应式数据，会转变成一个 \_\_returned\_\_ 的一个对象的访问器属性，针对这两个属性进行读取和赋值的时候，就会被拦截到。
+
+在 \_sfc_render 渲染函数中，setup 所返回的对象通过 $setup 参数可以拿到，在渲染函数中，通过 $setup.name 和 $setup.age 访问这两个访问器属性，产生读取行为的拦截，从而建立了依赖关系。
+
+**为什么Vue能实现精准更新**
+
+**Vue 的更新是组件级别的**，通过响应式，能够知道具体是哪个组件更新了。
+
+因为响应式数据是和 render 函数关联在一起，整个 render 函数对应的就是一整个组件的结构，回头只要响应式数据一变化，render 函数就会重新执行，生成组件新的虚拟 DOM 结构。
+
+之后要知道具体是哪一个节点更新，就需要靠 diff 算法了。
+
+- Vue2: 双端 diff
+- Vue3: 快速 diff
+
+**为什么Vue能实现数据共享**
+
+在 Vue 中是可以轻松实现数据共享的。**只需要将响应式数据单独提取出来，然后多个组件依赖这个响应式数据，之后只要这个响应式数据一变，依赖该数据的组件自然也会重新运行 render，然后渲染器渲染新的 DOM**.
+
+来看一个例子：
 
 ```js
-import { defineComponent, h } from 'vue'
-import styles from './UserCard.module.css'
-export default defineComponent({
-  name: 'UserCard',
-  props: {
-    name: String,
-    email: String,
-    avatarUrl: String,
+import { reactive } from 'vue'
+
+export const store = reactive({
+  todos: [
+    {
+      id: 1,
+      text: '学习Vue3',
+      completed: false,
+    },
+    {
+      id: 2,
+      text: '学习React',
+      completed: false,
+    },
+    {
+      id: 3,
+      text: '学习Angular',
+      completed: false,
+    },
+  ],
+  addTodo(todo) {
+    this.todos.push(todo)
   },
-  setup(props) {
-    // 下面我们使用了渲染函数的形式来描述了原本在模板中所描述的视图结构
-    return () =>
-      h(
-        'div',
-        {
-          class: styles.userCard,
-        },
-        [
-          h('img', {
-            class: styles.avatar,
-            src: props.avatarUrl,
-            alt: 'User avatar',
-          }),
-          h(
-            'div',
-            {
-              class: styles.userInfo,
-            },
-            [h('h2', props.name), h('p', props.email)],
-          ),
-        ],
-      )
+  toggleTodo(id) {
+    const todo = this.todos.find((todo) => todo.id === id)
+    if (todo) {
+      todo.completed = !todo.completed
+    }
   },
 })
 ```
 
-```css
-.userCard {
-  display: flex;
-  align-items: center;
-  background-color: #f9f9f9;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  padding: 10px;
-  margin: 10px 0;
-}
+> 完整的 demo 代码请参阅本节课的配套的课件。
 
-.avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  margin-right: 15px;
-}
+那 Pinia 的作用呢？
 
-.userInfo h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #333;
-}
+Pinia 是经过了完善的测试的，会给你带来很多附加的价值，例如：
 
-.userInfo p {
-  margin: 5px 0 0;
-  font-size: 16px;
-  color: #666;
-}
-```
+- 开发工具支持
+- 热替换
+- 插件机制
+- 自动补全
+- SSR
 
-甚至也可以使用 Vue2 经典的 options API 的语法来写：
+而且相比一个单纯的响应式数据，Pinia <u>语义</u>上面也会更好一些：
 
-```js
-import styles from './UserCard.module.css'
-import { h } from 'vue'
-export default {
-  name: 'UserCard',
-  props: {
-    name: String,
-    email: String,
-    avatarUrl: String,
-  },
-  render() {
-    return h(
-      'div',
-      {
-        class: styles.userCard,
-      },
-      [
-        h('img', {
-          class: styles.avatar,
-          src: this.avatarUrl,
-          alt: 'User avatar',
-        }),
-        h(
-          'div',
-          {
-            class: styles.userInfo,
-          },
-          [h('h2', this.name), h('p', this.email)],
-        ),
-      ],
-    )
-  },
-}
-```
+- 一个单独抽出来的 reactive 对象，从语义上来讲可能是任何东西
+- 一个 Pinia 对象，从语义上来讲就是全局共享数据的仓库
 
-至此我们就知道了，Vue 里面之所以提供模板的方式，是为了让开发者在描述视图的时候，更加的轻松。Vue 在运行的时候本身是不需要什么模板的，它只需要渲染函数，调用这些渲染函数后所得到的虚拟 DOM.
-
-作为一个框架的设计者，你必须要思考：你是框架少做一些，让用户的心智负担更重一些，还是说你的框架多做一些，让用户的心智负担更少一些。
-
-## 模板的编译
-
-**单文件组件中所书写的模板，对于模板编译器来讲，就是普通的字符串。**
-
-模板内容：
-
-```vue
-<template>
-  <div>
-    <h1 :id="someId">Hello</h1>
-  </div>
-</template>
-```
-
-对于模板编译器来讲，仅仅是一串字符串：
-
-```js
-'<template><div><h1 :id="someId">Hello</h1></div></template>'
-```
-
-模板编译器需要对上面的字符串进行操作，最终生成的结果：
-
-```js
-function render() {
-  return h('div', [h('h1', { id: someId }, 'Hello')])
-}
-```
-
-模板编译器在对模板字符串进行编译的时候，是一点一点转换而来的，整个过程：
-
-![image-20231113095532166](https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2023-11-13-015532.png)
-
-- 解析器：负责将模板字符串解析为对应的模板AST
-- 转换器：负责将模板AST转换为 JS AST
-- 生成器：将 JS AST 生成最终的渲染函数
-
-每一个部件都依赖于上一个部件的执行结果。
-
-假设有这么一段模板：
-
-```vue
-<div>
-	<p>Vue</p>
-  <p>React</p>
-</div>
-```
-
-对于模板编译器来讲，就是一段字符串：
-
-```js
-'<div><p>Vue</p><p>React</p></div>'
-```
-
-首先是解析器，拿到这串字符串，对这个字符串进行解析，得到一个一个的 token.
-
-```js
-;[
-  { type: 'tag', name: 'div' },
-  { type: 'tag', name: 'p' },
-  { type: 'text', content: 'Vue' },
-  { type: 'tagEnd', name: 'p' },
-  { type: 'tag', name: 'p' },
-  { type: 'text', content: 'React' },
-  { type: 'tagEnd', name: 'p' },
-  { type: 'tagEnd', name: 'div' },
-]
-```
-
-接下来解析器还需要根据所得到的 token 来生成抽象语法树（模板的AST）
-
-转换出来的 AST：
-
-```js
-{
-  "type": "Root",
-  "children": [
-    {
-      "type": "Element",
-      "tag": "div",
-      "children": [
-        {
-          "type": "Element",
-          "tag": "p",
-          "children": [
-              {
-                "type": "Text",
-                "content": "Vue"
-              }
-          ]
-        },
-        {
-          "type": "Element",
-          "tag": "p",
-          "children": [
-              {
-                "type": "Text",
-                "content": "React"
-              }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
-
-至此解析器的工作就完成了。
-
-接下来就是转换器登场，它需要将上一步得到的模板 AST 转换为 JS AST：
-
-```js
-{
-  "type": "FunctionDecl",
-  "id": {
-      "type": "Identifier",
-      "name": "render"
-  },
-  "params": [],
-  "body": [
-      {
-          "type": "ReturnStatement",
-          "return": {
-              "type": "CallExpression",
-              "callee": {"type": "Identifier", "name": "h"},
-              "arguments": [
-                  { "type": "StringLiteral", "value": "div"},
-                  {"type": "ArrayExpression","elements": [
-                        {
-                            "type": "CallExpression",
-                            "callee": {"type": "Identifier", "name": "h"},
-                            "arguments": [
-                                {"type": "StringLiteral", "value": "p"},
-                                {"type": "StringLiteral", "value": "Vue"}
-                            ]
-                        },
-                        {
-                            "type": "CallExpression",
-                            "callee": {"type": "Identifier", "name": "h"},
-                            "arguments": [
-                                {"type": "StringLiteral", "value": "p"},
-                                {"type": "StringLiteral", "value": "React"}
-                            ]
-                        }
-                    ]
-                  }
-              ]
-          }
-      }
-  ]
-}
-```
-
-最后就是生成器，根据上一步所得到的 JS AST，生成具体的 JS 代码：
-
-```js
-function render() {
-  return h('div', [h('p', 'Vue'), h('p', 'React')])
-}
-```
-
-下面是一个模板编译器大致的结构：
-
-```js
-function compile(template) {
-  // 1. 解析器
-  const ast = parse(template)
-  // 2. 转换器：将模板 AST 转换为 JS AST
-  transform(ast)
-  // 3. 生成器
-  const code = genrate(ast)
-
-  return code
-}
-```
-
-## 编译的时机
-
-整体来讲会有两种情况：
-
-1. 运行时编译
-2. 预编译
-
-**1. 运行时编译**
-
-例如下面的代码，是直接通过 CDN 的方式引入的 Vue
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-    <style>
-      .user-card {
-        display: flex;
-        align-items: center;
-        background-color: #f9f9f9;
-        border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        padding: 10px;
-        margin: 10px 0;
-      }
-      .avatar {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        margin-right: 15px;
-      }
-      .user-info h2 {
-        margin: 0;
-        font-size: 20px;
-        color: #333;
-      }
-      .user-info p {
-        margin: 5px 0 0;
-        font-size: 16px;
-        color: #666;
-      }
-    </style>
-  </head>
-  <body>
-    <!-- 书写模板 -->
-    <div id="app">
-      <user-card :name="name" :email="email" :avatar-url="avatarUrl" />
-    </div>
-
-    <template id="user-card-template">
-      <div class="user-card">
-        <img :src="avatarUrl" alt="User avatar" class="avatar" />
-        <div class="user-info">
-          <h2>{{ name }}</h2>
-          <p>{{ email }}</p>
-        </div>
-      </div>
-    </template>
-
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script>
-      const { createApp } = Vue
-
-      const UserCard = {
-        name: 'UserCard',
-        props: {
-          name: String,
-          email: String,
-          avatarUrl: String,
-        },
-        template: '#user-card-template',
-      }
-
-      createApp({
-        components: {
-          UserCard,
-        },
-        data() {
-          return {
-            name: 'John Doe',
-            email: 'john@example',
-            avatarUrl: './yinshi.jpg',
-          }
-        },
-      }).mount('#app')
-    </script>
-  </body>
-</html>
-```
-
-在上面的例子中，也会涉及到模板代码以及模板的编译，那么此时的模板编译就是在运行时进行的。
-
-**2. 预编译**
-
-预编译是发生在工程化环境下面。
-
-所谓预编译，指的是工程打包过程中就完成了模板的编译工作，浏览器拿到的是打包后的代码，是完全没有模板的。
-
-这里推荐一个插件：vite-plugin-inspect
-
-安装该插件后在 vite.config.js 配置文件中简单配置一下：
-
-```js
-// vite.config.js
-import Inspect from 'vite-plugin-inspect'
-
-export default {
-  plugins: [Inspect()],
-}
-```
-
-之后就可以在 http://localhost:5173/\_\_inspect/ 里面看到每一个组件编译后的结果。
+这样其实也能一定程度的降低开发者的心智负担，提高代码的可读性。
 
 ---
 
