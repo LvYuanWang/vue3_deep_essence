@@ -1,420 +1,325 @@
-# 响应式的本质
+# 图解EFFECT
 
-- 依赖收集：所谓依赖收集，其实就是收集的一些函数。因为当数据发生变化的时候，需要重新执行这些函数，因此需要提前收集起来。
-- 派发更新：所谓派发更新，就是通知被收集了的函数，现在数据已经更新了，你们需要重新执行一遍。
+effect 方法的作用：就是将 **函数** 和 **数据** 关联起来。
 
-**数据**
-
-当数据发生变换会通知一些函数重新执行，这里的数据指的就是**响应式数据**。
-
-在 Vue 里面，那就是指：
-
-- ref
-- reactive
-- props
-- computed
-
-这几种方式所得到的数据就是响应式数据。
-
-**依赖**
-
-谁和谁之间有依赖关系？
-
-**响应式数据**和**函数**之间有依赖关系。**当函数在运行期间用到了响应式数据，那么我们可以称之为两者之间有依赖**。
-
-但还有一点需要明确，那就是什么是用到？
-
-**所谓用到，是指函数在运行期间出现了读取成员被拦截的情况，这样才算是用到**。
-
-完整表述：**函数在运行期间，出现了读取响应式数据被拦截的情况，我们就称之为两者之间产生了依赖，这个依赖（也就是一个对应关系）是会被收集的，方便响应式数据发生变化时重新执行对应的函数**。
-
-练习：
+回忆 watchEffect
 
 ```js
-// demo1
-var a;
-function foo() {
-  console.log(a);
-}
-// 没有依赖关系，a 不是响应式数据
-```
-
-```js
-// demo2
-var a = ref(1);
-function foo() {
-  console.log(a);
-}
-// 没有依赖关系，虽然用到了响应式数据，但是没有出现读取拦截的情况
-```
-
-```js
-// demo3
-var a = ref(1);
-function foo() {
-  console.log(a.value);
-}
-// 有依赖关系，foo 依赖 value 属性
-```
-
-```js
-// demo4
-var a = ref({ b: 1 });
-const k = a.value;
-const n = k.b;
-function foo() {
-  a;
-  a.value;
-  k.b;
+import { ref, watchEffect } from "vue";
+const state = ref({ a: 1 });
+const k = state.value;
+const n = k.a;
+// 这里就会整理出 state.value、state.value.a
+watchEffect(() => {
+  console.log("运行");
+  state;
+  state.value;
+  state.value.a;
   n;
-}
-// 有依赖关系
-// foo 依赖 a 的 value 属性
-// foo 依赖 k 的 b 属性
+});
+setTimeout(() => {
+  state.value = { a: 3 }; // 要重新运行，因为是对 value 的写入操作
+}, 500);
 ```
 
-```js
-// demo5
-var a = ref({ b: 1 });
-const k = a.value;
-const n = k.b;
-function foo() {
-  a;
-  k.b;
-  n;
-}
-// 有依赖关系
-// foo 依赖 k 的 b 属性
-```
+effect函数的设计：
 
 ```js
-// demo6
-var a = ref({ b: 1 });
-const k = a.value;
-const n = k.b;
-function foo() {
-  a;
-  a.value.b;
-  n;
-}
-// 有依赖关系
-// foo 依赖 a 的 value 以及 b 属性
+// 原始对象
+const data = {
+  a: 1,
+  b: 2,
+  c: 3,
+};
+// 产生一个代理对象
+const state = new Proxy(data, { ... });
+effect(() => {
+  console.log(state.a);
+});
 ```
 
+在上面的代码中，向 effect 方法传入的回调函数中，访问了 state 的 a 成员，然后我们期望 a 这个成员和这个回调函数建立关联。
+
+第一版实现如下：
+
 ```js
-// demo7
-var a = ref({ b: 1 });
-const k = a.value;
-const n = k.b;
-function foo() {
-  function fn2() {
-    a;
-    a.value.b;
-    n;
+let activeEffect = null; // 记录当前的函数
+const depsMap = new Map(); // 保存依赖关系
+
+function track(target, key) {
+  // 建立依赖关系
+  if (activeEffect) {
+    let deps = depsMap.get(key); // 根据属性值去拿依赖的函数集合
+    if (!deps) {
+      deps = new Set(); // 创建一个新的集合
+      depsMap.set(key, deps); // 将集合存入 depsMap
+    }
+    // 将依赖的函数添加到集合里面
+    deps.add(activeEffect);
   }
-  fn2();
+  console.log(depsMap);
 }
-// 有依赖关系
-// foo 依赖 a 的 value 以及 b 属性
+
+function trigger(target, key) {
+  // 这里面就需要运行依赖的函数
+  const deps = depsMap.get(key);
+  if (deps) {
+    deps.forEach((effect) => effect());
+  }
+}
+
+// 原始对象
+const data = {
+  a: 1,
+  b: 2,
+  c: 3,
+};
+// 代理对象
+const state = new Proxy(data, {
+  get(target, key) {
+    track(target, key); // 进行依赖收集
+    return target[key];
+  },
+  set(target, key, value) {
+    target[key] = value;
+    trigger(target, key); // 派发更新
+    return true;
+  },
+});
+
+/**
+ *
+ * @param {*} fn 回调函数
+ */
+function effect(fn) {
+  activeEffect = fn;
+  fn();
+  activeEffect = null;
+}
+
+effect(() => {
+  // 这里在访问 a 成员时，会触发 get 方法，进行依赖收集
+  console.log("执行函数");
+  console.log(state.a);
+});
+state.a = 10;
 ```
 
-总而言之：**只需要判断在函数的运行期间，是否存在读取操作行为的拦截，只要存在这种类型的拦截，那么该函数就和该响应式数据存在依赖关系**。
+第一版实现，**每个属性对应一个 Set 集合**，该集合里面是所依赖的函数，所有属性与其对应的依赖函数集合形成一个 map 结构，如下图所示：
 
-不过，有一种情况需要注意，那就是**异步**。**如果在函数的运行期间存在异步代码，那么之后的代码统统不看了**。
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-30-005612.png" alt="image-20240530085612443" style="zoom:50%;" />
+
+activeEffect 起到一个中间变量的作用，临时存储这个回调函数，等依赖收集完成后，再将这个临时变量设置为空即可。
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-30-010642.png" alt="image-20240530090641942" style="zoom:50%;" />
+
+**问题一**：每一次运行回调函数的时候，都应该确定新的依赖关系。
+
+稍作修改：
 
 ```js
-// demo8
-var a = ref({ b: 1 });
-const k = a.value;
-const n = k.b;
-async function foo() {
-  a;
-  a.value; // 产生依赖，依赖 value 属性
-  await 1;
-  k.b; // 没有依赖，因为它是异步后面的代码
-  n;
+effect(() => {
+  if (state.a === 1) {
+    state.b;
+  } else {
+    state.c;
+  }
+  console.log("执行了函数");
+});
+```
+
+在上面的代码中，两次运行回调函数，所建立的依赖关系应该是不一样的：
+
+- 第一次：a、b
+- 第二次：a、c
+
+第一次运行依赖如下：
+
+```js
+Map(1) { 'a' => Set(1) { [Function (anonymous)] } }
+Map(2) {
+  'a' => Set(1) { [Function (anonymous)] },
+  'b' => Set(1) { [Function (anonymous)] }
+}
+执行了函数
+```
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-30-011134.png" alt="image-20240530091134221" style="zoom:50%;" />
+
+执行 state.a = 100
+
+依赖关系变为了：
+
+```js
+Map(1) { 'a' => Set(1) { [Function (anonymous)] } }
+Map(2) {
+  'a' => Set(1) { [Function (anonymous)] },
+  'b' => Set(1) { [Function (anonymous)] }
+}
+执行了函数
+Map(2) {
+  'a' => Set(1) { [Function (anonymous)] },
+  'b' => Set(1) { [Function (anonymous)] }
+}
+Map(2) {
+  'a' => Set(1) { [Function (anonymous)] },
+  'b' => Set(1) { [Function (anonymous)] }
+}
+执行了函数
+```
+
+当 a 的值修改为 100 后，依赖关系应该重新建立，也就是说：
+
+- 第一次运行：建立 a、b 依赖
+- 第二次运行：建立 a、c 依赖
+
+那么现在 a 的值明明已经变成 100 了，为什么重新执行回调函数的时候，没有重新建立依赖呢？
+
+原因也很简单，如下图所示：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-30-012138.png" alt="image-20240530092137893" style="zoom:50%;" />
+
+**第一次建立依赖关系的时候，是将依赖函数赋值给 activeEffect，最终是通过 activeEffect 这个中间变量将依赖函数添加进依赖列表的**。依赖函数执行完毕后，activeEffect 就设置为了 null，之后 a 成员的值发生改变，重新运行的是回调函数，但是 activeEffect 的值依然是 null，这就会导致 track 中依赖收集的代码根本进不去：
+
+```js
+function track(target, key) {
+  if (activeEffect) {
+    // ...
+  }
 }
 ```
 
-**函数**
-
-**函数必须是被监控的函数**。
-
-- effect：这是 Vue3 源码内部的底层实现，后期会介绍
-- watchEffect
-- watch
-- 组件渲染函数
-
-因此最后总结一下：**<u>只有被监控的函数，在它的同步代码运行期间，读取操作被拦截的响应式数据，才会建立依赖关系，建立了依赖关系之后，响应式数据发生变化，对应的函数才会重新执行</u>**。
-
-练习：
+怎么办呢？也很简单，**我们在收集依赖的时候，不再是仅仅收集回调函数，而是收集一个包含 activeEffect 的环境**，继续改造 effect：
 
 ```js
-// demo1
-import { ref, watchEffect } from "vue";
-const state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  // 首先判断依赖关系
-  console.log("运行");
-  state; // 没有依赖关系产生
-  state.value; // 会产生依赖关系，依赖 value 属性
-  state.value.a; // 会产生依赖关系，依赖 value 和 a 属性
-  n; // 没有依赖关系
+function effect(fn) {
+  const environment = () => {
+    activeEffect = environment;
+    fn();
+    activeEffect = null;
+  };
+  environment();
+}
+```
+
+这里 activeEffect 对应的值，不再是像之前那样是回调函数，而是一整个 environment 包含环境信息的函数，这样当重新执行依赖的函数的时候，执行的也就是这个环境函数，而环境函数的第一行就是 activeEffect 赋值，这样就能够正常的进入到依赖收集环节。
+
+如下图所示：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-30-012752.png" alt="image-20240530092751730" style="zoom:50%;" />
+
+**问题二：**旧的依赖没有删除
+
+解决方案：在执行 fn 方法之前，先调用了一个名为 cleanup 的方法，该方法的作用就是用来清除依赖。
+
+该方法代码如下：
+
+```js
+function cleanup(environment) {
+  let deps = environment.deps; // 拿到当前环境函数的依赖（是个数组）
+  if (deps.length) {
+    deps.forEach((dep) => {
+      dep.delete(environment);
+      if (dep.size === 0) {
+        for (let [key, value] of depsMap) {
+          if (value === dep) {
+            depsMap.delete(key);
+          }
+        }
+      }
+    });
+    deps.length = 0;
+  }
+}
+```
+
+具体结构如下图所示：
+
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-30-014306.png" alt="image-20240530094306251" style="zoom:50%;" />
+
+**测试多个依赖函数**
+
+```js
+effect(() => {
+  if (state.a === 1) {
+    state.b;
+  } else {
+    state.c;
+  }
+  console.log("执行了函数1");
 });
-setTimeout(() => {
-  state.value = { a: 3 }; // 要重新运行
-}, 500);
+effect(() => {
+  console.log(state.c);
+  console.log("执行了函数2");
+});
+state.a = 2;
 ```
 
 ```js
-// demo2
-import { ref, watchEffect } from "vue";
-const state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state;
-  state.value; // value
-  state.value.a; // value a
-  n;
+effect(() => {
+  if (state.a === 1) {
+    state.b;
+  } else {
+    state.c;
+  }
+  console.log("执行了函数1");
 });
-setTimeout(() => {
-  //   state.value; // 不会重新运行
-  state.value.a = 1; // 不会重新运行
-}, 500);
+effect(() => {
+  console.log(state.a);
+  console.log(state.c);
+  console.log("执行了函数2");
+});
+state.a = 2;
 ```
+
+解决无限循环问题：
+
+在 track 函数中，每次 state.a 被访问时，都会重新添加当前的 activeEffect 到依赖集合中。而在 trigger 函数中，当 state.a 被修改时，会触发所有依赖 state.a 的 effect 函数，这些 effect 函数中又会重新访问 state.a，从而导致了无限循环。具体来讲：
+
+1. 初始执行 effect 时，state.a 的值为 1，因此第一个 effect 会访问 state.b，第二个 effect 会访问 state.a 和 state.c。
+2. state.a 被修改为 2 时，trigger 函数会触发所有依赖 state.a 的 effect 函数。
+3. 第二个 effect 函数被触发后，会访问 state.a，这时 track 函数又会把当前的 activeEffect 添加到 state.a 的依赖集合中。
+4. 因为 state.a 的值被修改，会再次触发 trigger，导致第二个 effect 函数再次执行，如此循环往复，导致无限循环。
+
+要解决这个问题，可以在 trigger 函数中添加一些机制来防止重复触发同一个 effect 函数，比如使用一个 Set 来记录已经触发过的 effect 函数：
 
 ```js
-// demo3
-import { ref, watchEffect } from "vue";
-const state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state;
-  state.value; // value
-  state.value.a; // value、a
-  n;
-});
-setTimeout(() => {
-  k.a = 2; // 这里相当于是操作了 proxy 对象的成员 a
-  // 要重新运行
-  // 如果将上面的 state.value.a; 这句话注释点，就不会重新运行
-}, 500);
+function trigger(target, key) {
+  const deps = depsMap.get(key);
+  if (deps) {
+    const effectsToRun = new Set(deps); // 复制一份集合，防止在执行过程中修改原集合
+    effectsToRun.forEach((effect) => effect());
+  }
+}
 ```
+
+**测试嵌套函数**
 
 ```js
-// demo4
-import { ref, watchEffect } from "vue";
-const state = ref({ a: 1 });
-const k = state.value;
-let n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state;
-  state.value;
-  state.value.a;
-  n;
+effect(() => {
+  effect(() => {
+    state.a;
+    console.log("执行了函数2");
+  });
+  state.b;
+  console.log("执行了函数1");
 });
-setTimeout(() => {
-  n++; // 不会重新运行
-}, 500);
 ```
+
+会发现所建立的依赖又不正常了：
 
 ```js
-// demo5
-import { ref, watchEffect } from "vue";
-const state = ref({ a: 1 });
-const k = state.value;
-let n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state;
-  state.value;
-  state.value.a;
-  n;
-});
-setTimeout(() => {
-  state.value.a = 100; // 要重新运行
-}, 500);
+Map(1) { 'a' => Set(1) { [Function: environment] { deps: [Array] } } }
+执行了函数2
+Map(1) { 'a' => Set(1) { [Function: environment] { deps: [Array] } } }
+执行了函数1
 ```
 
-```js
-// demo6
-import { ref, watchEffect } from "vue";
-let state = ref({ a: 1 });
-const k = state.value;
-let n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state;
-  state.value;
-  state.value.a;
-  n;
-});
-setTimeout(() => {
-  state = 100; // 不要重新运行
-}, 500);
-```
+究其原因，是目前的函数栈有问题，当执行到内部的 effect 函数时，会将 activeEffect 设置为 null，如下图所示：
 
-```js
-// demo7
-import { ref, watchEffect } from "vue";
-const state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state;
-  state.value; // value 会被收集
-  n;
-});
-setTimeout(() => {
-  state.value.a = 100; // 不会重新执行
-}, 500);
-```
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-05-30-023612.png" alt="image-20240530103611905" style="zoom:50%;" />
 
-```js
-// demo8
-import { ref, watchEffect } from "vue";
-let state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state.value.a; // value、a
-});
-setTimeout(() => {
-  state.value = { a: 1 }; // 要重新运行
-}, 500);
-```
-
-```js
-// demo9
-import { ref, watchEffect } from "vue";
-const state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state.value.a = 2; // 注意这里的依赖仅仅只有 value 属性
-});
-setTimeout(() => {
-  //   state.value.a = 100; // 不会重新运行的
-  state.value = {}; // 要重新运行
-}, 500);
-```
-
-```js
-// demo10
-import { ref, watchEffect } from "vue";
-let state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state;
-  state.value.a; // value、a
-  n;
-});
-setTimeout(() => {
-  state.value.a = 2; // 要重新运行
-}, 500);
-setTimeout(() => {
-  //   k.a = 3; // 要重新运行
-  k.a = 2; // 因为值没有改变，所以不会重新运行
-}, 1000);
-```
-
-```js
-// demo11
-import { ref, watchEffect } from "vue";
-let state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state.value.a; // value、a
-});
-setTimeout(() => {
-  state.value = { a: 1 }; // 要重新运行
-}, 500);
-setTimeout(() => {
-  k.a = 3; // 这里不会重新运行，因为前面修改了 state.value，不再是同一个代理对象
-}, 1000);
-```
-
-```js
-// demo12
-import { ref, watchEffect } from "vue";
-let state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state.value.a; // value、a
-});
-setTimeout(() => {
-  state.value = { a: 1 }; // 要重新执行
-}, 500);
-setTimeout(() => {
-  state.value.a = 2; // 要重新执行
-}, 1000);
-```
-
-```js
-// demo13
-import { ref, watchEffect } from "vue";
-let state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state.value.a; // value、a
-});
-setTimeout(() => {
-  state.value = { a: 1 }; // 重新执行
-}, 500);
-setTimeout(() => {
-  state.value.a = 1; // 不会重新执行，因为值没有变化
-}, 1500);
-```
-
-```js
-// demo14
-import { ref, watchEffect } from "vue";
-let state = ref({ a: 1 });
-const k = state.value;
-const n = k.a;
-watchEffect(() => {
-  console.log("运行");
-  state.value.a; // value、a
-  k.a; // 返回的 proxy 对象的 a 成员
-});
-setTimeout(() => {
-  state.value = { a: 1 }; // 要重新运行
-}, 500);
-setTimeout(() => {
-  k.a = 3; // 会重新执行
-}, 1000);
-setTimeout(() => {
-  state.value.a = 4; // 会重新执行
-}, 1500);
-```
-
-在这节课的最后，我们再对响应式的本质做一个完整的总结：
-
-**<u>所谓响应式，背后其实就是函数和数据的一组映射，当数据发生变化，会将该数据对应的所有函数全部执行一遍。当然这里的数据和函数都是有要求的。数据是响应式数据，函数是被监控的函数。</u>**
-
-**<u>收集数据和函数的映射关系在 Vue 中被称之为依赖收集，数据变化通知映射的函数重新执行被称之为派发更新。</u>**
-
-什么时候会产生依赖收集？
-
-**<u>只有被监控的函数，在它的同步代码运行期间，读取操作被拦截的响应式数据，才会建立依赖关系，建立了依赖关系之后，响应式数据发生变化，对应的函数才会重新执行</u>**。
+解决方案：模拟函数栈的形式。
 
 ---
 
