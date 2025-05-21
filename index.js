@@ -49,15 +49,19 @@ const state = new Proxy(data, {
  */
 function effect(fn) {
   const environment = () => {
-    activeEffect = environment; // 记录当前的函数
-    // 将环境函数推入栈(其实就是在模拟真实的函数栈)
-    effectStack.push(environment);
-    // 清除依赖
-    cleanup(environment);
-    fn();
-    // activeEffect = null;
-    effectStack.pop(); // 执行完毕, 弹出栈
-    activeEffect = effectStack[effectStack.length - 1]; // 取出栈顶的函数
+    try {
+      // 尝试执行的代码, 这里可能会抛出错误
+      activeEffect = environment; // 记录当前的函数
+      // 将环境函数推入栈(其实就是在模拟真实的函数栈)
+      effectStack.push(environment);
+      // 清除依赖
+      cleanup(environment);
+      return fn();
+    } finally {
+      // 无论是否抛出错误, 都要执行的代码, 确保资源总是被释放
+      effectStack.pop(); // 执行完毕, 弹出栈
+      activeEffect = effectStack[effectStack.length - 1]; // 取出栈顶的函数
+    }
   };
   environment.deps = []; // 用来记录该环境函数在哪些集合里面
   environment();
