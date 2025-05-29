@@ -41,3 +41,5 @@ export const TriggerOpTypes = {
  * 这是一个特殊的标识
  */
 export const RAW = Symbol("raw");
+
+export const ITERATE_KEY = Symbol("iterate");

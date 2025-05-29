@@ -1,52 +1,69 @@
 // 测试文件
 
+import { effect } from "./effect/effect.js";
 import { reactive } from "./reactive.js";
 
 const obj = {
   a: 1,
   b: 2,
-  c: {
-    name: "张三",
-    age: 18,
-  },
 };
+const state = reactive(obj);
 
-const arr = [1, obj, 3];
-
-const proxyArr = reactive(arr);
-
-// 测试读取行为
-// proxyArr[0];
-// proxyArr.length;
-// for (let key in proxyArr) {
-//   proxyArr[key];
+// 测试 1
+// function fn() {
+//   console.log("fn");
+//   state.a = state.a + 1;
 // }
+// effect(fn);
+// state.a = 100;
 
-// for (let i = 0; i < proxyArr.length; i++) {
-//   proxyArr[i];
+// 测试 2
+// effect(() => {
+//   if (state.a === 1) {
+//     state.b;
+//   } else {
+//     state.c;
+//   }
+//   console.log("执行了函数1");
+// });
+// effect(() => {
+//   console.log(state.c);
+//   console.log("执行了函数2");
+// });
+// state.a = 2;
+// state.c = 2;
+// state.b = 2;
+
+// 懒执行
+// function fn() {
+//   console.log("fn");
+//   state.a = state.a + 1;
 // }
+// const effectFn = effect(fn, { lazy: true });
+// state.a = 100;
+// effectFn(); // 只有在执行了这个函数之后, 才会建立依赖关系
 
-// proxyArr.includes(1);
-// proxyArr.includes(3);
-// console.log(proxyArr.includes(3));
-
-// proxyArr.indexOf(1);
-// proxyArr.indexOf(3);
-// console.log(proxyArr.indexOf(3));
-
-// console.log(proxyArr.lastIndexOf(1));
-
-// console.log(proxyArr.includes(obj));
-// console.log(proxyArr.indexOf(obj));
-// console.log(proxyArr.lastIndexOf(obj));
-
-// 测试写入行为
-// proxyArr[0] = 100;
-// proxyArr[5] = 100;
-
-// proxyArr.length = 10;
-
-// 将数组的 length 设置为 1, 会删除后面的元素
-// proxyArr.length = 1;
-
-proxyArr.push(4);
+// 用户指定依赖函数如何进行处理
+function fn() {
+  console.log("fn");
+  state.a = state.a + 1;
+}
+let isRun = false;
+const effectFn = effect(fn, {
+  lazy: true,
+  scheduler: (eff) => {
+    // 由用户来决定如何处理依赖的函数
+    Promise.resolve().then(() => {
+      if (!isRun) {
+        isRun = true;
+        eff(); // 执行依赖函数
+      }
+    });
+  },
+});
+effectFn();
+state.a++;
+state.a++;
+state.a++;
+state.a++;
+state.a++;
