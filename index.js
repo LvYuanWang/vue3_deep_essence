@@ -1,69 +1,29 @@
 // 测试文件
-
+import { computed } from "./computed.js";
 import { effect } from "./effect/effect.js";
 import { reactive } from "./reactive.js";
 
-const obj = {
+const state = reactive({
   a: 1,
   b: 2,
-};
-const state = reactive(obj);
-
-// 测试 1
-// function fn() {
-//   console.log("fn");
-//   state.a = state.a + 1;
-// }
-// effect(fn);
-// state.a = 100;
-
-// 测试 2
-// effect(() => {
-//   if (state.a === 1) {
-//     state.b;
-//   } else {
-//     state.c;
-//   }
-//   console.log("执行了函数1");
-// });
-// effect(() => {
-//   console.log(state.c);
-//   console.log("执行了函数2");
-// });
-// state.a = 2;
-// state.c = 2;
-// state.b = 2;
-
-// 懒执行
-// function fn() {
-//   console.log("fn");
-//   state.a = state.a + 1;
-// }
-// const effectFn = effect(fn, { lazy: true });
-// state.a = 100;
-// effectFn(); // 只有在执行了这个函数之后, 才会建立依赖关系
-
-// 用户指定依赖函数如何进行处理
-function fn() {
-  console.log("fn");
-  state.a = state.a + 1;
-}
-let isRun = false;
-const effectFn = effect(fn, {
-  lazy: true,
-  scheduler: (eff) => {
-    // 由用户来决定如何处理依赖的函数
-    Promise.resolve().then(() => {
-      if (!isRun) {
-        isRun = true;
-        eff(); // 执行依赖函数
-      }
-    });
-  },
 });
-effectFn();
-state.a++;
-state.a++;
-state.a++;
-state.a++;
-state.a++;
+const sum = computed(() => {
+  console.log("计算属性进行计算了");
+  return state.a + state.b;
+});
+// console.log(sum.value);
+// // state.a = 2;
+// console.log(sum.value);
+// console.log(sum.value);
+// console.log(sum.value);
+// console.log(sum.value);
+// state.a = 20;
+// console.log(sum.value);
+
+// 假设渲染函数依赖计算属性的值, 那么当计算属性的值发生变化时, 渲染函数会重新执行
+effect(() => {
+  // 假设这个是渲染函数, 依赖了 sum 这个计算属性
+  console.log("render", sum.value);
+});
+
+state.a = 100;
