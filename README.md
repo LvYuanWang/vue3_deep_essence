@@ -1,218 +1,288 @@
-# 手写computed
+# 手写watch
 
-**回顾computed的用法**
-
-首先回顾一下 computed 的基本用法：
+**回顾watch的用法**
 
 ```js
-const state = reactive({
+const x = reactive({
   a: 1,
   b: 2,
 });
 
-const sum = computed(() => {
-  return state.a + state.b;
+// 单个 ref
+watch(x, (newX) => {
+  console.log(`x is ${newX}`);
 });
-```
 
-```js
-const firstName = ref("John");
-const lastName = ref("Doe");
-
-const fullName = computed({
-  get() {
-    return firstName.value + " " + lastName.value;
-  },
-  set(newValue) {
-    [firstName.value, lastName.value] = newValue.split(" ");
-  },
-});
-```
-
-**实现computed方法**
-
-首先第一步，我们需要对参数进行归一化，如下所示：
-
-```js
-function normalizeParameter(getterOrOptions) {
-  let getter, setter;
-  if (typeof getterOrOptions === "function") {
-    getter = getterOrOptions;
-    setter = () => {
-      console.warn(`Computed property was assigned to but it has no setter.`);
-    };
-  } else {
-    getter = getterOrOptions.get;
-    setter = getterOrOptions.set;
+// getter 函数
+watch(
+  () => x.a + x.b,
+  (sum) => {
+    console.log(`sum is: ${sum}`);
   }
-  return { getter, setter };
-}
+);
 ```
 
-上面的方法就是对传入 computed 的参数进行归一化，无论是传递的函数还是对象，统一都转换为对象。
+简单总结起来，就是前面的响应式数据发生变化，重新执行后面的回调函数。回调函数的参数列表中，会传入新的值和旧的值。
 
-接下啦就是建立依赖关系，如何建立呢？
+另外 watch 还接收第三个参数，是一个选项对象，可以的配置的值有：
 
-无外乎就是将传入的 getter 函数运行一遍，getter 函数内部的响应式数据和 getter 产生关联：
+- immediate：立即执行一次回调函数
+- once：只执行一次
+- flush
+  - post：在侦听器回调中能访问被 Vue 更新之后的所属组件的 DOM
+  - sync：在 Vue 进行任何更新之前触发
+
+watch 方法会返回一个函数，该函数用于停止侦听
 
 ```js
-// value 用于记录计算属性的值，dirty 用于标识是否需要重新计算
-let value,
-  dirty = true;
-// 将 getter 传入 effect，getter 里面的响应式属性就会和 getter 建立依赖关系
-const effetcFn = effect(getter, {
-  lazy: true,
-});
+const unwatch = watch(() => {});
+
+// ...当该侦听器不再需要时
+unwatch();
 ```
 
-这里的 value 用于缓存计算的值，dirty 用于标记数据是否过期，一开始标记为过期方便一开始执行一次计算到最新的值。
+**实现watch方法**
 
-lazy 选项标记为 true，因为计算属性只有在访问的之后，才会进行计算。
-
-接下来向外部返回一个对象：
+首先写一个工具方法 traverse：
 
 ```js
-const obj = {
-  // 外部获取计算属性的值
-  get value() {
-    if (dirty) {
-      // 第一次会进来，先计算一次，然后将至缓存起来
-      value = effetcFn();
-      dirty = false;
-    }
-    // 返回计算出来的值
+function traverse(value, seen = new Set()) {
+  // 检查 value 是否是对象类型，如果不是对象类型，或者是 null，或者已经访问过，则直接返回 value。
+  if (typeof value !== "object" || value === null || seen.has(value)) {
     return value;
-  },
-  set value(newValue) {
-    setter(newValue);
-  },
-};
-return obj;
+  }
+
+  // 将当前的 value 添加到 seen 集合中，标记为已经访问过，防止循环引用导致的无限递归。
+  seen.add(value);
+
+  // 使用 for...in 循环遍历对象的所有属性。
+  for (const key in value) {
+    // 递归调用 traverse，传入当前属性的值和 seen 集合。
+    traverse(value[key], seen);
+  }
+
+  // 返回原始值
+  return value;
+}
 ```
 
-该对象有一个 value 访问器属性，当访问 value 值的时候，会根据当前是否为脏值来决定是否重新计算。
+该方法的主要作用是递归遍历一个对象及其所有嵌套的属性，从而触发这些属性的依赖收集。
 
-目前为止，我们的计算属性工作一切正常，但是这种情况，某一个函数依赖计算属性的值，例如渲染函数。那么此时计算属性值的变化，应该也会让渲染函数重新执行才对。例如：
+这个方法在 watch 函数中很重要，因为它确保了所有嵌套属性的依赖关系都能被追踪到，当它们变化时能够触发回调函数。
 
-```js
-const state = reactive({
-  a: 1,
-  b: 2,
-});
-const sum = computed(() => {
-  console.log("computed");
-  return state.a + state.b;
-});
-
-effect(() => {
-  // 假设这个是渲染函数，依赖了 sum 这个计算属性
-  console.log("render", sum.value);
-});
-
-state.a++;
-```
-
-执行结果如下：
-
-```js
-computed
-render 3
-computed
-```
-
-可以看到 computed 倒是重新执行了，但是渲染函数并没有重新执行。
-
-怎么办呢？很简单，内部让渲染函数和计算属性的值建立依赖关系即可。
+假设有一个深层嵌套的对象：
 
 ```js
 const obj = {
-  // 外部获取计算属性的值
-  get value() {
-    // 相当于计算属性的 value 值和渲染函数之间建立了联系
-    track(obj, TrackOpTypes.GET, "value");
-    // ...
+  a: 1,
+  b: {
+    c: 2,
+    d: {
+      e: 3,
+    },
   },
-  // ...
 };
-return obj;
 ```
 
-首先在获取依赖属性的值的时候，我们进行依次依赖收集，这样因为渲染函数里面用到了计算属性，因此计算属性 value 值就会和渲染函数产生依赖关系。
+那么整个遍历过程如下：
+
+- 由于 obj 是对象，并且没有访问过，会将 obj 添加到 seen 集合里面
+- 遍历 obj 的属性：
+  - 访问 obj.a 是数字，会直接返回，不做进一步的处理
+  - 访问 obj.b，会进入 traverse(obj.b, seen)
+    - 由于 obj.b 是对象，并且未被访问过，将 obj.b 添加到 seen 集合中。
+    - 遍历 obj.b 的属性：
+      - 访问 obj.b.c 是数字，会直接返回，不做进一步的处理
+      - 访问 obj.b.d，会进入 traverse(obj.b.d, seen)
+        - 由于 obj.b.d 是对象，并且未被访问过，将 obj.b.d 添加到 seen 集合中。
+        - 遍历 obj.b.d 的属性：
+          - 访问 obj.b.c.e 是数字，会直接返回，不做进一步的处理
+
+在这个过程中，每次访问一个属性（例如 obj.b 或 obj.b.d），都会触发依赖收集。这意味着当前活动的 effect 函数会被记录为这些属性的依赖。
+
+接下来咱们仍然是进行参数归一化：
 
 ```js
-const effetcFn = effect(getter, {
+/**
+ * @param {*} source
+ * @param {*} cb 要执行的回调函数
+ * @param {*} options 选项对象
+ * @returns
+ */
+export function watch(source, cb, options = {}) {
+  let getter;
+  if (typeof source === "function") {
+    getter = source;
+  } else {
+    getter = () => traverse(source);
+  }
+}
+```
+
+在上面的代码中，无论用户的 source 是传递什么类型的值，都转换为函数（这里没有考虑数组的情况）
+
+- source 本来就是函数：直接将 source 赋值给 getter
+- source 是一个响应式对象：转换为一个函数，该函数会调用 traverse 方法
+
+接下来定义两个变量，用于存储新旧两个值：
+
+```js
+let oldValue, newValue;
+```
+
+好了，接下来轮到 effect 登场了：
+
+```js
+const effectFn = effect(() => getter(), {
   lazy: true,
-  scheduler() {
-    dirty = true;
-    // 派发更新，执行和 value 相关的函数，也就是渲染函数。
-    trigger(obj, TriggerOpTypes.SET, "value");
+  scheduler: () => {
+    newValue = effectFn();
+    cb(newValue, oldValue);
+    oldValue = newValue;
   },
 });
 ```
 
-接下来添加配置项 scheduler，之后无论是 state.a 的变化，还是 state.b 的变化，都会进入到 scheduler，而在 scheduler 中，重新将 dirty 标记为脏数据，然后派发和 value 相关的更新即可。
+这段代码，首先会运行 getter 函数（前面做了参数归一化，已经将 getter 转换为函数了），getter 函数里面的响应式数据就会被依赖收集，当这些响应式数据发生变化的时候，就需要派发更新。
 
-完整的代码如下：
+因为这里传递了 scheduler，因此在派发更新的时候，实际上执行的就是 scheduler 对应的函数，实际上也就是这三行代码：
 
 ```js
-import { effect } from "./effect/effect.js";
-import track from "./effect/track.js";
-import trigger from "./effect/trigger.js";
-import { TriggerOpTypes, TrackOpTypes } from "./utils.js";
+newValue = effectFn();
+cb(newValue, oldValue);
+oldValue = newValue;
+```
 
-function normalizeParameter(getterOrOptions) {
-  let getter, setter;
-  if (typeof getterOrOptions === "function") {
-    getter = getterOrOptions;
-    setter = () => {
-      console.warn(`Computed property was assigned to but it has no setter.`);
-    };
-  } else {
-    getter = getterOrOptions.get;
-    setter = getterOrOptions.set;
-  }
-  return { getter, setter };
+这三行代码的意思也非常明确：
+
+- newValue = effectFn( )：重新执行一次 getter，获取到新的值，然后把新的值给 newValue
+- cb(newValue, oldValue)：调用用户传入的换掉函数，将新旧值传递过去
+- oldValue = newValue：更新 oldValue
+
+再往后走，代码就非常简单了，在此之前之前，我们先把 scheduler 对应的函数先提取出来：
+
+```js
+const job = () => {
+  newValue = effectFn();
+  cb(newValue, oldValue);
+  oldValue = newValue;
+};
+
+const effectFn = effect(() => getter(), {
+  lazy: true,
+  scheduler: job,
+});
+```
+
+然后实现 immediate，如下：
+
+```js
+if (options.immediate) {
+  job();
+} else {
+  oldValue = effectFn();
 }
+```
+
+immediate 的实现无外乎就是立马派发一次更新。而如果没有配置 immediate，实际上也会执行一次依赖函数，只不过算出来的值算作旧值，而非新值。
+
+接下来执行取消侦听，其实也非常简单：
+
+```js
+return () => {
+  cleanup(effectFn);
+};
+```
+
+就是返回一个函数，函数里面调用 cleanup 将依赖清除掉即可。
+
+你会发现只要前面响应式系统写好了，接下来的这些实现都非常简单。
+
+最后我们再优化一下，添加 flush 配置项的 post 值的支持。flush 的本质就是指定调度函数的执行时机，当 flush 的值为 post 的时候，代表调用函数需要将最终执行的更新函数放到一个微任务队列中，等待 DOM 更新结束后再执行。
+
+代码如下所示：
+
+```js
+const effectFn = effect(() => getter(), {
+  lazy: true,
+  scheduler: () => {
+    if (options.flush === "post") {
+      Promise.resolve().then(job);
+    } else {
+      job();
+    }
+  },
+});
+```
+
+完整代码如下：
+
+```js
+import { effect, cleanup } from "./effect/effect.js";
 
 /**
- *
- * @param {*} getterOrOptions 可能是函数，也可能是对象
+ * @param {*} source
+ * @param {*} cb 要执行的回调函数
+ * @param {*} options 选项对象
+ * @returns
  */
-export function computed(getterOrOptions) {
-  // 1. 第一步，先做参数归一化
-  const { getter, setter } = normalizeParameter(getterOrOptions);
+export function watch(source, cb, options = {}) {
+  let getter;
+  if (typeof source === "function") {
+    getter = source;
+  } else {
+    getter = () => traverse(source);
+  }
 
-  // value 用于记录计算属性的值，dirty 用于标识是否需要重新计算
-  let value,
-    dirty = true;
-  // 将 getter 传入 effect，getter 里面的响应式属性就会和 getter 建立依赖关系
-  const effetcFn = effect(getter, {
+  // 用于保存上一次的值和当前新的值
+  let oldValue, newValue;
+
+  // 这里的 job 就是要执行的函数
+  const job = () => {
+    newValue = effectFn();
+    cb(newValue, oldValue);
+    oldValue = newValue;
+  };
+
+  const effectFn = effect(() => getter(), {
     lazy: true,
-    scheduler() {
-      dirty = true;
-      trigger(obj, TriggerOpTypes.SET, "value");
-      console.log("j");
+    scheduler: () => {
+      if (options.flush === "post") {
+        Promise.resolve().then(job);
+      } else {
+        job();
+      }
     },
   });
 
-  // 2. 第二步，返回一个新的对象
-  const obj = {
-    // 外部获取计算属性的值
-    get value() {
-      track(obj, TrackOpTypes.GET, "value");
-      if (dirty) {
-        // 第一次会进来，先计算一次，然后将至缓存起来
-        value = effetcFn();
-        dirty = false;
-      }
-      // 直接计算出来的值
-      return value;
-    },
-    set value(newValue) {
-      setter(newValue);
-    },
+  if (options.immediate) {
+    job();
+  } else {
+    oldValue = effectFn();
+  }
+
+  return () => {
+    cleanup(effectFn);
   };
-  return obj;
+}
+
+function traverse(value, seen = new Set()) {
+  // 检查 value 是否是对象类型，如果不是对象类型，或者是 null，或者已经访问过，则直接返回 value。
+  if (typeof value !== "object" || value === null || seen.has(value)) {
+    return value;
+  }
+
+  // 将当前的 value 添加到 seen 集合中，标记为已经访问过，防止循环引用导致的无限递归。
+  seen.add(value);
+
+  // 使用 for...in 循环遍历对象的所有属性。
+  for (const key in value) {
+    // 递归调用 traverse，传入当前属性的值和 seen 集合。
+    traverse(value[key], seen);
+  }
+
+  // 返回原始值
+  return value;
 }
 ```
 
