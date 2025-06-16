@@ -2,7 +2,7 @@
   <div id="app">
     <h1>任务管理应用</h1>
     <TaskManager
-      :initial-tasks="task"
+      :initial-tasks="tasks"
       @task-completed="handleTaskCompleted"
       @task-unCompleted="handleTaskUnCompleted"
     />
@@ -10,33 +10,36 @@
 </template>
 
 <script>
+import { defineComponent, ref } from 'vue'
 import TaskManager from './components/TaskManager.vue'
 
-export default {
+export default defineComponent({
   name: 'App',
   components: {
     TaskManager,
   },
-  data() {
+  setup() {
+    const tasks = ref([
+      { id: 1, task: '学习 Vue.js', completed: false },
+      { id: 2, task: '学习 React.js', completed: false },
+      { id: 3, task: '学习 Laravel', completed: false },
+    ])
+
+    const handleTaskCompleted = (task) => {
+      console.log('任务完成', task)
+    }
+
+    const handleTaskUnCompleted = (task) => {
+      console.log('取消完成', task)
+    }
+
     return {
-      task: [
-        { id: 1, task: '学习 Vue.js', completed: true },
-        { id: 2, task: '学习 React.js', completed: true },
-        { id: 3, task: '学习 Laravel', completed: true },
-      ],
+      tasks,
+      handleTaskCompleted,
+      handleTaskUnCompleted,
     }
   },
-  methods: {
-    // 完成任务
-    handleTaskCompleted(task) {
-      console.log('任务完成', task)
-    },
-    // 任务未完成
-    handleTaskUnCompleted(task) {
-      console.log('取消完成', task)
-    },
-  },
-}
+})
 </script>
 
 <style scoped>

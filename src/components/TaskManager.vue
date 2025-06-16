@@ -12,19 +12,21 @@
           class="btn task-btn"
           @click="task.completed ? unCompletedTask(task.id) : completedTask(task.id)"
         >
-          {{ task.completed ? '完成' : '未完成' }}
+          {{ task.completed ? '取消完成' : '完成' }}
         </button>
       </div>
     </div>
     <div class="add-newTask">
-      <input class="input-task" type="text" placeholder="添加新任务" v-model="newTasksTitle" />
+      <input class="input-task" type="text" placeholder="添加新任务" v-model="newTaskTitle" />
       <button class="add-task-btn btn" @click="addTask">添加任务</button>
     </div>
   </div>
 </template>
 
 <script>
-export default {
+import { defineComponent, ref, toRefs } from 'vue'
+
+export default defineComponent({
   name: 'TaskManager',
   props: {
     initialTasks: {
@@ -33,45 +35,47 @@ export default {
       default: () => [],
     },
   },
-  data() {
-    return {
-      tasks: [...this.initialTasks],
-      newTasksTitle: '', // 新任务标题
-    }
-  },
-  methods: {
+  emits: ['task-completed', 'task-unCompleted'],
+  setup(props, { emit }) {
+    const { initialTasks } = toRefs(props)
+    const tasks = ref([...initialTasks.value]) // 任务列表
+    const newTaskTitle = ref('') // 新任务标题
+
+    // 方法
     // 新增任务
-    addTask() {
-      if (this.newTasksTitle.trim().length === 0) {
-        alert('请输入你要添加的新任务!!')
+    const addTask = () => {
+      if (newTaskTitle.value.trim().length === 0) {
+        alert('请输入你要添加的新任务!!!')
         return
       }
       // 添加任务
-      this.tasks.unshift({
+      tasks.value.push({
         id: Date.now(),
-        task: this.newTasksTitle.trim(),
+        task: newTaskTitle.value.trim(),
         completed: false,
       })
-      this.newTasksTitle = '' // 清空输入框
-    },
+      newTaskTitle.value = '' // 清空输入框
+    }
     // 标记为已完成
-    completedTask(id) {
-      const task = this.tasks.find((task) => task.id === id)
-      if (task) {
-        task.completed = true
-        this.$emit('task-completed', task)
-      }
-    },
+    const completedTask = (id) => {
+      const task = tasks.value.find((task) => task.id === id)
+      task && ((task.completed = true), emit('task-completed', task))
+    }
     // 标记为未完成
-    unCompletedTask(id) {
-      const task = this.tasks.find((task) => task.id === id)
-      if (task) {
-        task.completed = false
-        this.$emit('task-unCompleted', task)
-      }
-    },
+    const unCompletedTask = (id) => {
+      const task = tasks.value.find((task) => task.id === id)
+      task && ((task.completed = false), emit('task-unCompleted', task))
+    }
+
+    return {
+      tasks,
+      newTaskTitle,
+      addTask,
+      completedTask,
+      unCompletedTask,
+    }
   },
-}
+})
 </script>
 
 <style scoped>
@@ -131,6 +135,7 @@ export default {
 .unCompleted {
   text-decoration: line-through;
   color: #ccc;
+  background-color: #95ff8d87;
 }
 
 .unCompleted .task-btn {
@@ -148,12 +153,14 @@ export default {
 
 .input-task {
   flex: 1;
-  height: 25px;
+  height: 40px;
   border-radius: 5px;
+  box-sizing: border-box;
 }
 
 .add-task-btn {
   background-color: rgb(46, 46, 242);
-  padding: 9px 15px;
+  height: 40px;
+  padding: 0 15px;
 }
 </style>
