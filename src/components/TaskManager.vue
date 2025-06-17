@@ -23,59 +23,46 @@
   </div>
 </template>
 
-<script>
-import { defineComponent, ref, toRefs } from 'vue'
+<script setup>
+import { ref, toRefs } from 'vue'
 
-export default defineComponent({
-  name: 'TaskManager',
-  props: {
-    initialTasks: {
-      type: Array,
-      required: true,
-      default: () => [],
-    },
-  },
-  emits: ['task-completed', 'task-unCompleted'],
-  setup(props, { emit }) {
-    const { initialTasks } = toRefs(props)
-    const tasks = ref([...initialTasks.value]) // 任务列表
-    const newTaskTitle = ref('') // 新任务标题
-
-    // 方法
-    // 新增任务
-    const addTask = () => {
-      if (newTaskTitle.value.trim().length === 0) {
-        alert('请输入你要添加的新任务!!!')
-        return
-      }
-      // 添加任务
-      tasks.value.push({
-        id: Date.now(),
-        task: newTaskTitle.value.trim(),
-        completed: false,
-      })
-      newTaskTitle.value = '' // 清空输入框
-    }
-    // 标记为已完成
-    const completedTask = (id) => {
-      const task = tasks.value.find((task) => task.id === id)
-      task && ((task.completed = true), emit('task-completed', task))
-    }
-    // 标记为未完成
-    const unCompletedTask = (id) => {
-      const task = tasks.value.find((task) => task.id === id)
-      task && ((task.completed = false), emit('task-unCompleted', task))
-    }
-
-    return {
-      tasks,
-      newTaskTitle,
-      addTask,
-      completedTask,
-      unCompletedTask,
-    }
+const props = defineProps({
+  initialTasks: {
+    type: Array,
+    required: true,
+    default: () => [],
   },
 })
+const emit = defineEmits(['task-completed', 'task-unCompleted'])
+const { initialTasks } = toRefs(props)
+const tasks = ref([...initialTasks.value]) // 任务列表
+const newTaskTitle = ref('') // 新任务标题
+
+// 方法
+// 新增任务
+const addTask = () => {
+  if (newTaskTitle.value.trim().length === 0) {
+    alert('请输入你要添加的新任务!!!')
+    return
+  }
+  // 添加任务
+  tasks.value.push({
+    id: Date.now(),
+    task: newTaskTitle.value.trim(),
+    completed: false,
+  })
+  newTaskTitle.value = '' // 清空输入框
+}
+// 标记为已完成
+const completedTask = (id) => {
+  const task = tasks.value.find((task) => task.id === id)
+  task && ((task.completed = true), emit('task-completed', task))
+}
+// 标记为未完成
+const unCompletedTask = (id) => {
+  const task = tasks.value.find((task) => task.id === id)
+  task && ((task.completed = false), emit('task-unCompleted', task))
+}
 </script>
 
 <style scoped>

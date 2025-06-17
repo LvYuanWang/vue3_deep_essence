@@ -9,37 +9,23 @@
   </div>
 </template>
 
-<script>
-import { defineComponent, ref } from 'vue'
+<script setup>
+import { ref } from 'vue'
 import TaskManager from './components/TaskManager.vue'
 
-export default defineComponent({
-  name: 'App',
-  components: {
-    TaskManager,
-  },
-  setup() {
-    const tasks = ref([
-      { id: 1, task: '学习 Vue.js', completed: false },
-      { id: 2, task: '学习 React.js', completed: false },
-      { id: 3, task: '学习 Laravel', completed: false },
-    ])
+const tasks = ref([
+  { id: 1, task: '学习 Vue.js', completed: false },
+  { id: 2, task: '学习 React.js', completed: false },
+  { id: 3, task: '学习 Laravel', completed: false },
+])
 
-    const handleTaskCompleted = (task) => {
-      console.log('任务完成', task)
-    }
+const handleTaskCompleted = (task) => {
+  console.log('任务完成', task)
+}
 
-    const handleTaskUnCompleted = (task) => {
-      console.log('取消完成', task)
-    }
-
-    return {
-      tasks,
-      handleTaskCompleted,
-      handleTaskUnCompleted,
-    }
-  },
-})
+const handleTaskUnCompleted = (task) => {
+  console.log('取消完成', task)
+}
 </script>
 
 <style scoped>
