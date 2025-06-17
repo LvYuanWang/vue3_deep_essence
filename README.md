@@ -1,420 +1,239 @@
-# 模板的本质
+# 组件生命周期
 
-- 渲染函数
-- 模板编译
-- 编译的时机
+官方生命周期图：
 
-## 渲染函数
+<img src="https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2024-04-12-031421.png" alt="lifecycle" style="zoom:50%;" />
 
-渲染函数（ h ）调用后会返回虚拟 DOM 节点
+## 完整生命周期
 
-文档地址：https://cn.vuejs.org/api/render-function.html#h
+这里分为这么几个大的阶段：
 
-实际上，Vue 里面的单文件组件是会被一个 **模板编译器** 进行编译的，编译后的结果并不存在什么模板，而是会把模板编译为渲染函数的形式。
+1. 初始化选项式 API
+2. 模板编译
+3. 初始化渲染
+4. 更新组件
+5. 销毁组件
 
-这意味着我们完全可以使用纯 JS 来书写组件，文件的内部直接调用渲染函数来描述你的组件视图。
+**1. 初始化选项式API**
 
-例如我们之前写过的 UserCard 这个组件，完全可以改写成纯 JS 的形式：
+当渲染器遇到一个组件的时候，首先是**初始化选项式 API**，这里在内部**还会涉及到组件实例对象的创建**。
 
-```js
-import { defineComponent, h } from 'vue'
-import styles from './UserCard.module.css'
-export default defineComponent({
-  name: 'UserCard',
-  props: {
-    name: String,
-    email: String,
-    avatarUrl: String,
-  },
-  setup(props) {
-    // 下面我们使用了渲染函数的形式来描述了原本在模板中所描述的视图结构
-    return () =>
-      h(
-        'div',
-        {
-          class: styles.userCard,
-        },
-        [
-          h('img', {
-            class: styles.avatar,
-            src: props.avatarUrl,
-            alt: 'User avatar',
-          }),
-          h(
-            'div',
-            {
-              class: styles.userInfo,
-            },
-            [h('h2', props.name), h('p', props.email)],
-          ),
-        ],
-      )
-  },
-})
-```
+在组件实例对象创建的前后，就对应着一组生命周期钩子函数：
 
-```css
-.userCard {
-  display: flex;
-  align-items: center;
-  background-color: #f9f9f9;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  padding: 10px;
-  margin: 10px 0;
-}
+- 组件实例创建前：setup、beforeCreate
+- 组件实例创建后：created
 
-.avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  margin-right: 15px;
-}
+**2. 模板编译**
 
-.userInfo h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #333;
-}
+接下来会进入模板编译的阶段，当模板编译的工作结束后，会执行 beforeMount 钩子函数。
 
-.userInfo p {
-  margin: 5px 0 0;
-  font-size: 16px;
-  color: #666;
-}
-```
+**3. 初始化渲染**
 
-甚至也可以使用 Vue2 经典的 options API 的语法来写：
+接下来是初始化渲染，到了这个阶段，意味着已经生成了真实的 DOM. 完成初始化渲染后会执行 mounted 生命周期方法。
+
+**4. 更新组件**
+
+更新组件时对应着一组生命周期钩子方法：
+
+- 更新前：beforeUpdate
+- 更新后：updated
+
+**5. 销毁组件**
+
+销毁组件时也对应一组生命周期钩子方法：
+
+- 销毁前：beforeUnmount
+- 销毁后：unmounted
+
+一般在销毁组件时我们会做一些清理工作，例如清除计时器等操作。
+
+另外需要注意在 Vue3 中生命周期的钩子函数的名字和上面所介绍的生命周期稍微有一些区别：
+
+| 生命周期名称       | Vue2          | Vue3            |
+| ------------------ | ------------- | --------------- |
+| beforeCreate 阶段  | beforeCreate  | setup           |
+| created 阶段       | created       | setup           |
+| beforeMount 阶段   | beforeMount   | onBeforeMount   |
+| mounted 阶段       | mounted       | onMounted       |
+| beforeUpdate 阶段  | beforeUpdate  | onBeforeUpdate  |
+| updated 阶段       | updated       | onUpdated       |
+| beforeUnmount 阶段 | beforeDestroy | onBeforeUnmount |
+| unmounted 阶段     | destoryed     | onUnmounted     |
+
+Vue2 和 Vue3 的生命周期钩子方法是可以共存的，这意味着你在一个组件中可以写 mounted 和 onMounted，Vue3 的生命周期钩子函数的执行时机会比 Vue2 对应的生命周期钩子函数要早一些，不过一般没人会这么写。
+
+## 生命周期的本质
+
+**所谓生命周期，其实就是在合适的时机调用用户所设置的回调函数**。
+
+首先需要了解组件实例和组件挂载。假设用户书写了这么一个组件：
 
 ```js
-import styles from './UserCard.module.css'
-import { h } from 'vue'
 export default {
   name: 'UserCard',
   props: {
     name: String,
     email: String,
     avatarUrl: String,
+  },
+  data() {
+    return {
+      foo: 1,
+    }
+  },
+  mounted() {
+    // ...
   },
   render() {
-    return h(
-      'div',
-      {
-        class: styles.userCard,
-      },
-      [
-        h('img', {
-          class: styles.avatar,
-          src: this.avatarUrl,
-          alt: 'User avatar',
-        }),
-        h(
-          'div',
-          {
-            class: styles.userInfo,
-          },
-          [h('h2', this.name), h('p', this.email)],
-        ),
-      ],
-    )
+    return h('div', { class: styles.userCard }, [
+      h('img', {
+        class: styles.avatar,
+        src: this.avatarUrl,
+        alt: 'User avatar',
+      }),
+      h('div', { class: styles.userInfo }, [h('h2', this.name), h('p', this.email)]),
+    ])
   },
 }
 ```
 
-至此我们就知道了，Vue 里面之所以提供模板的方式，是为了让开发者在描述视图的时候，更加的轻松。Vue 在运行的时候本身是不需要什么模板的，它只需要渲染函数，调用这些渲染函数后所得到的虚拟 DOM.
+那么这些内容实际上是一个**选项对象**，回头在渲染这个组件的时候，某些信息是会被挂到组件实例上面的。**组件实例本质就是一个对象，该对象维护着组件运行过程中的所有信息**，例如：
 
-作为一个框架的设计者，你必须要思考：你是框架少做一些，让用户的心智负担更重一些，还是说你的框架多做一些，让用户的心智负担更少一些。
-
-## 模板的编译
-
-**单文件组件中所书写的模板，对于模板编译器来讲，就是普通的字符串。**
-
-模板内容：
-
-```vue
-<template>
-  <div>
-    <h1 :id="someId">Hello</h1>
-  </div>
-</template>
-```
-
-对于模板编译器来讲，仅仅是一串字符串：
+- 注册到组件的生命周期钩子函数
+- 组件渲染的子树
+- 组件是否已经被挂载
+- 组件自身的状态
 
 ```js
-'<template><div><h1 :id="someId">Hello</h1></div></template>'
-```
+function mountComponent(vnode, container, anchor) {
+  // 获取选项对象
+  const componentOptions = vnode.type
+  // 从选项对象上面提取出 render 以及 data
+  const { render, data } = componentOptions
 
-模板编译器需要对上面的字符串进行操作，最终生成的结果：
+  // 创建响应式数据
+  const state = reactive(data())
 
-```js
-function render() {
-  return h('div', [h('h1', { id: someId }, 'Hello')])
+  // 定义组件实例，一个组件实例本质上就是一个对象，它包含与组件有关的状态信息
+  const instance = {
+    // 组件自身的状态数据，即 data
+    state,
+    // 一个布尔值，用来表示组件是否已经被挂载，初始值为 false
+    isMounted: false,
+    // 组件所渲染的内容，即子树（subTree）
+    subTree: null,
+  }
+
+  // 将组件实例设置到 vnode 上，用于后续更新
+  vnode.component = instance
+
+  // 后面逻辑略...
 }
 ```
 
-模板编译器在对模板字符串进行编译的时候，是一点一点转换而来的，整个过程：
-
-![image-20231113095532166](https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2023-11-13-015532.png)
-
-- 解析器：负责将模板字符串解析为对应的模板AST
-- 转换器：负责将模板AST转换为 JS AST
-- 生成器：将 JS AST 生成最终的渲染函数
-
-每一个部件都依赖于上一个部件的执行结果。
-
-假设有这么一段模板：
-
-```vue
-<div>
-	<p>Vue</p>
-  <p>React</p>
-</div>
-```
-
-对于模板编译器来讲，就是一段字符串：
+下面是组件挂载：
 
 ```js
-'<div><p>Vue</p><p>React</p></div>'
-```
+function mountComponent(vnode, container, anchor) {
+  // 前面逻辑略...
 
-首先是解析器，拿到这串字符串，对这个字符串进行解析，得到一个一个的 token.
-
-```js
-;[
-  { type: 'tag', name: 'div' },
-  { type: 'tag', name: 'p' },
-  { type: 'text', content: 'Vue' },
-  { type: 'tagEnd', name: 'p' },
-  { type: 'tag', name: 'p' },
-  { type: 'text', content: 'React' },
-  { type: 'tagEnd', name: 'p' },
-  { type: 'tagEnd', name: 'div' },
-]
-```
-
-接下来解析器还需要根据所得到的 token 来生成抽象语法树（模板的AST）
-
-转换出来的 AST：
-
-```js
-{
-  "type": "Root",
-  "children": [
-    {
-      "type": "Element",
-      "tag": "div",
-      "children": [
-        {
-          "type": "Element",
-          "tag": "p",
-          "children": [
-              {
-                "type": "Text",
-                "content": "Vue"
-              }
-          ]
-        },
-        {
-          "type": "Element",
-          "tag": "p",
-          "children": [
-              {
-                "type": "Text",
-                "content": "React"
-              }
-          ]
-        }
-      ]
-    }
-  ]
+  effect(
+    () => {
+      // 调用组件的渲染函数，获得子树
+      const subTree = render.call(state, state)
+      // 检查组件是否已经被挂载
+      if (!instance.isMounted) {
+        // 初次挂载，调用 patch 函数第一个参数传递 null
+        patch(null, subTree, container, anchor)
+        // 重点：将组件实例的 isMounted 设置为 true，这样当更新发生时就不会再次进行挂载操作，
+        // 而是会执行更新
+        instance.isMounted = true
+      } else {
+        // 当 isMounted 为 true 时，说明组件已经被挂载，只需要完成自更新即可，
+        // 所以在调用 patch 函数时，第一个参数为组件上一次渲染的子树，
+        // 意思是，使用新的子树与上一次渲染的子树进行打补丁操作
+        patch(instance.subTree, subTree, container, anchor)
+      }
+      // 更新组件实例的子树
+      instance.subTree = subTree
+    },
+    { scheduler: queueJob },
+  )
 }
 ```
 
-至此解析器的工作就完成了。
+其核心就是根据组件实例的 isMounted 属性来判断该组件是否是初次挂载：
 
-接下来就是转换器登场，它需要将上一步得到的模板 AST 转换为 JS AST：
+- 初次挂载：patch 的第一个参数为 null；会设置组件实例 isMounted 为 true
+- 非初次挂载：更新组件的逻辑，patch 的第一个参数是组件上一次渲染的子树，从而和新的子树进行 diff 计算
+
+**所谓生命周期，就是在合适的时机执行用户传入的回调函数**。
 
 ```js
-{
-  "type": "FunctionDecl",
-  "id": {
-      "type": "Identifier",
-      "name": "render"
-  },
-  "params": [],
-  "body": [
-      {
-          "type": "ReturnStatement",
-          "return": {
-              "type": "CallExpression",
-              "callee": {"type": "Identifier", "name": "h"},
-              "arguments": [
-                  { "type": "StringLiteral", "value": "div"},
-                  {"type": "ArrayExpression","elements": [
-                        {
-                            "type": "CallExpression",
-                            "callee": {"type": "Identifier", "name": "h"},
-                            "arguments": [
-                                {"type": "StringLiteral", "value": "p"},
-                                {"type": "StringLiteral", "value": "Vue"}
-                            ]
-                        },
-                        {
-                            "type": "CallExpression",
-                            "callee": {"type": "Identifier", "name": "h"},
-                            "arguments": [
-                                {"type": "StringLiteral", "value": "p"},
-                                {"type": "StringLiteral", "value": "React"}
-                            ]
-                        }
-                    ]
-                  }
-              ]
-          }
+function mountComponent(vnode, container, anchor) {
+  const componentOptions = vnode.type
+  // 从组件选项对象中取得组件的生命周期函数
+  const { render, data, beforeCreate, created, beforeMount, mounted, beforeUpdate, updated } =
+    componentOptions
+
+  // 拿到生命周期钩子函数之后，就会在下面的流程中对应的位置调用这些钩子函数
+
+  // 在这里调用 beforeCreate 钩子
+  beforeCreate && beforeCreate()
+
+  const state = reactive(data())
+
+  const instance = {
+    state,
+    isMounted: false,
+    subTree: null,
+  }
+  vnode.component = instance
+
+  // 组件实例已经创建
+  // 此时在这里调用 created 钩子
+  created && created.call(state)
+
+  effect(
+    () => {
+      const subTree = render.call(state, state)
+      if (!instance.isMounted) {
+        // 在这里调用 beforeMount 钩子
+        beforeMount && beforeMount.call(state)
+        patch(null, subTree, container, anchor)
+        instance.isMounted = true
+        // 在这里调用 mounted 钩子
+        mounted && mounted.call(state)
+      } else {
+        // 在这里调用 beforeUpdate 钩子
+        beforeUpdate && beforeUpdate.call(state)
+        patch(instance.subTree, subTree, container, anchor)
+        // 在这里调用 updated 钩子
+        updated && updated.call(state)
       }
-  ]
+      instance.subTree = subTree
+    },
+    { scheduler: queueJob },
+  )
 }
 ```
 
-最后就是生成器，根据上一步所得到的 JS AST，生成具体的 JS 代码：
+在上面的代码中，首先从组件的选项对象中获取到注册到组件上面的生命周期函数，然后内部会在合适的时机调用它们。
 
-```js
-function render() {
-  return h('div', [h('p', 'Vue'), h('p', 'React')])
-}
-```
+## 嵌套结构下的生命周期
 
-下面是一个模板编译器大致的结构：
+组件之间是可以进行嵌套的，从而形成一个组件树结构。那么当遇到多组件嵌套的时候，各个组件的生命周期是如何运行的呢？
 
-```js
-function compile(template) {
-  // 1. 解析器
-  const ast = parse(template)
-  // 2. 转换器：将模板 AST 转换为 JS AST
-  transform(ast)
-  // 3. 生成器
-  const code = genrate(ast)
+实际上非常简单，就是一个递归的过程。
 
-  return code
-}
-```
+假设 A 组件下面嵌套了 B 组件，那么渲染 A 的时候会执行 A 的 onBeforeMount，然后是 B 组件的 onBeforeMount，然后 B 正常挂载，执行 B 组件的 mounted，B 渲染完成后，接下来才是 A 的 mounted.
 
-## 编译的时机
+1. 组件 A：onBeforeMount
+2. 组件 B：onBeforeMount
+3. 组件 B：mounted
+4. 组件 A：mounted
 
-整体来讲会有两种情况：
-
-1. 运行时编译
-2. 预编译
-
-**1. 运行时编译**
-
-例如下面的代码，是直接通过 CDN 的方式引入的 Vue
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-    <style>
-      .user-card {
-        display: flex;
-        align-items: center;
-        background-color: #f9f9f9;
-        border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        padding: 10px;
-        margin: 10px 0;
-      }
-      .avatar {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        margin-right: 15px;
-      }
-      .user-info h2 {
-        margin: 0;
-        font-size: 20px;
-        color: #333;
-      }
-      .user-info p {
-        margin: 5px 0 0;
-        font-size: 16px;
-        color: #666;
-      }
-    </style>
-  </head>
-  <body>
-    <!-- 书写模板 -->
-    <div id="app">
-      <user-card :name="name" :email="email" :avatar-url="avatarUrl" />
-    </div>
-
-    <template id="user-card-template">
-      <div class="user-card">
-        <img :src="avatarUrl" alt="User avatar" class="avatar" />
-        <div class="user-info">
-          <h2>{{ name }}</h2>
-          <p>{{ email }}</p>
-        </div>
-      </div>
-    </template>
-
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script>
-      const { createApp } = Vue
-
-      const UserCard = {
-        name: 'UserCard',
-        props: {
-          name: String,
-          email: String,
-          avatarUrl: String,
-        },
-        template: '#user-card-template',
-      }
-
-      createApp({
-        components: {
-          UserCard,
-        },
-        data() {
-          return {
-            name: 'John Doe',
-            email: 'john@example',
-            avatarUrl: './yinshi.jpg',
-          }
-        },
-      }).mount('#app')
-    </script>
-  </body>
-</html>
-```
-
-在上面的例子中，也会涉及到模板代码以及模板的编译，那么此时的模板编译就是在运行时进行的。
-
-**2. 预编译**
-
-预编译是发生在工程化环境下面。
-
-所谓预编译，指的是工程打包过程中就完成了模板的编译工作，浏览器拿到的是打包后的代码，是完全没有模板的。
-
-这里推荐一个插件：vite-plugin-inspect
-
-安装该插件后在 vite.config.js 配置文件中简单配置一下：
-
-```js
-// vite.config.js
-import Inspect from 'vite-plugin-inspect'
-
-export default {
-  plugins: [Inspect()],
-}
-```
-
-之后就可以在 http://localhost:5173/\_\_inspect/ 里面看到每一个组件编译后的结果。
+倘若涉及到组件的销毁，也同样是递归的逻辑。
 
 ---
 
