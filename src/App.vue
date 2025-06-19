@@ -1,52 +1,143 @@
 <template>
-  <div>
-    <UserCard name="小白" email="Anna@outlook.com" avatar="src/assets/蜘蛛侠.jpg" />
-
-    <!-- <h2>商品列表</h2>
-    <ul>
-      <li v-for="(product, index) in products" :key="index">
-        {{ product.name }} - {{ product.price }}
-      </li>
-    </ul> -->
+  <div id="app">
+    <h1>KeepAlive 内置组件测试</h1>
+    <nav>
+      <span v-for="(tagName, index) in tagArr" :key="index">
+        {{ tagName }}
+        <span class="close" @click="removeKeepAliveTag(tagName)">×</span>
+      </span>
+    </nav>
+    <div class="view-container">
+      <div class="navBar">
+        <div v-for="(route, index) in routes" :key="index">
+          <RouterLink :to="route.path">{{ route.name }}</RouterLink>
+          <span @click="addKeepAliveTag(route.name)">＋</span>
+        </div>
+      </div>
+      <div class="content-box">
+        <RouterView v-slot="{ Component }">
+          <keep-alive :include="tagArr">
+            <component :is="Component" />
+          </keep-alive>
+        </RouterView>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
-// import UserCard from './components/UserCard.vue'
-import UserCard from '@/components/UserCard/UserCard.js'
+import { ref } from 'vue'
+import { RouterView } from 'vue-router'
+import { routes } from './Router'
 
-// import { ref } from 'vue'
-// const products = ref([
-//   { name: '键盘', price: 99.99 },
-//   { name: '鼠标', price: 49.99 },
-//   { name: '显示器', price: 199.99 },
-//   { name: '主机', price: 2999.99 },
-//   { name: '耳机', price: 199.99 },
-//   { name: '音响', price: 499.99 },
-//   { name: '路由器', price: 299.99 },
-//   { name: '打印机', price: 799.99 },
-//   { name: '扫描仪', price: 599.99 },
-//   { name: '投影仪', price: 1999.99 },
-//   { name: '摄像头', price: 299.99 },
-//   { name: '麦克风', price: 199.99 },
-//   { name: '游戏手柄', price: 399.99 },
-//   { name: 'VR眼镜', price: 999.99 },
-//   { name: '平板电脑', price: 1999.99 },
-//   { name: '智能手机', price: 6999.99 },
-//   { name: '智能手表', price: 1999.99 },
-//   { name: '智能音箱', price: 499.99 },
-//   { name: '智能家居', price: 999.99 },
-//   { name: '无人机', price: 2999.99 },
-//   { name: '3D打印机', price: 9999.99 },
-//   { name: '游戏机', price: 2999.99 },
-//   { name: '电子书', price: 999.99 },
-//   { name: '数码相机', price: 4999.99 },
-//   { name: '单反相机', price: 9999.99 },
-//   { name: '微单相机', price: 6999.99 },
-//   { name: '运动相机', price: 2999.99 },
-//   { name: '行车记录仪', price: 999.99 },
-//   { name: '智能手环', price: 199.99 },
-// ])
+const tagArr = ref([])
+const addKeepAliveTag = (tagName) => {
+  if (!tagArr.value.includes(tagName)) {
+    tagArr.value.push(tagName)
+  }
+}
+
+const removeKeepAliveTag = (tagName) => {
+  const newTagArr = tagArr.value.filter((itemName) => itemName !== tagName)
+  tagArr.value = newTagArr
+}
 </script>
 
-<style scoped></style>
+<style scoped>
+#app {
+  width: 70%;
+  margin: 0 auto;
+  text-align: center;
+  user-select: none;
+}
+
+nav > span {
+  padding: 5px 10px;
+  color: blueviolet;
+  text-decoration: none;
+  border: 1px solid blueviolet;
+  margin: 0 10px;
+  border-radius: 5px;
+  position: relative;
+}
+
+.close {
+  position: absolute;
+  right: -8px;
+  top: -8px;
+  background: blueviolet;
+  color: #fff;
+  width: 20px;
+  height: 20px;
+  text-align: center;
+  line-height: 20px;
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.content-box {
+  padding: 10px;
+  border: 1px solid #ccc;
+  flex: 1;
+  padding: 0 20px;
+}
+
+.view-container {
+  display: flex;
+  margin-top: 20px;
+  height: 78vh;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.navBar {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background-color: #ccc;
+  padding: 20px 10px;
+}
+
+.navBar div {
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.navBar a {
+  padding: 5px 10px;
+  color: #fff;
+  text-decoration: none;
+  background-color: blueviolet;
+  border-radius: 5px;
+  flex: 1;
+}
+
+.navBar span {
+  background-color: blueviolet;
+  height: 30px;
+  width: 30px;
+  border-radius: 50%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  font-size: 15px;
+  font-weight: bold;
+  color: #fff;
+}
+
+.close,
+.navBar span {
+  transition: all 0.5s;
+}
+
+.close:hover,
+.navBar span:hover {
+  opacity: 0.5;
+}
+</style>

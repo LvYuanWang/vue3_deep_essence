@@ -1,420 +1,63 @@
-# 模板的本质
+# keepalive生命周期
 
-- 渲染函数
-- 模板编译
-- 编译的时机
+keep-alive 这个词借鉴于 HTTP 协议。在 HTTP 协议中，KeepAlive 被称之为 **HTTP持久连接（HTTP persistent connection）**，其作用是允许多个请求或响应共用一个 TCP 连接。
 
-## 渲染函数
+在没有 KeepAlive 的情况下，一个 HTTP 连接会在每次请求/响应结束后关闭，当下一次请求发生时，会建立一个新的 HTTP 连接。频繁地销毁、创建 HTTP 连接会带来额外的性能开销，KeepAlive 就是为了解决这个问题而诞生的。
 
-渲染函数（ h ）调用后会返回虚拟 DOM 节点
+HTTP 中的 KeepAlive 可以避免连接频繁地销毁/创建，与 HTTP 中的 KeepAlive 类似，Vue 里面的 keep-alive 组件也是用于**对组件进行缓存，避免组件被频繁的销毁/重建**。
 
-文档地址：https://cn.vuejs.org/api/render-function.html#h
+**回顾基本使用**
 
-实际上，Vue 里面的单文件组件是会被一个 **模板编译器** 进行编译的，编译后的结果并不存在什么模板，而是会把模板编译为渲染函数的形式。
-
-这意味着我们完全可以使用纯 JS 来书写组件，文件的内部直接调用渲染函数来描述你的组件视图。
-
-例如我们之前写过的 UserCard 这个组件，完全可以改写成纯 JS 的形式：
-
-```js
-import { defineComponent, h } from 'vue'
-import styles from './UserCard.module.css'
-export default defineComponent({
-  name: 'UserCard',
-  props: {
-    name: String,
-    email: String,
-    avatarUrl: String,
-  },
-  setup(props) {
-    // 下面我们使用了渲染函数的形式来描述了原本在模板中所描述的视图结构
-    return () =>
-      h(
-        'div',
-        {
-          class: styles.userCard,
-        },
-        [
-          h('img', {
-            class: styles.avatar,
-            src: props.avatarUrl,
-            alt: 'User avatar',
-          }),
-          h(
-            'div',
-            {
-              class: styles.userInfo,
-            },
-            [h('h2', props.name), h('p', props.email)],
-          ),
-        ],
-      )
-  },
-})
-```
-
-```css
-.userCard {
-  display: flex;
-  align-items: center;
-  background-color: #f9f9f9;
-  border: 1px solid #e0e0e0;
-  border-radius: 10px;
-  padding: 10px;
-  margin: 10px 0;
-}
-
-.avatar {
-  width: 60px;
-  height: 60px;
-  border-radius: 50%;
-  margin-right: 15px;
-}
-
-.userInfo h2 {
-  margin: 0;
-  font-size: 20px;
-  color: #333;
-}
-
-.userInfo p {
-  margin: 5px 0 0;
-  font-size: 16px;
-  color: #666;
-}
-```
-
-甚至也可以使用 Vue2 经典的 options API 的语法来写：
-
-```js
-import styles from './UserCard.module.css'
-import { h } from 'vue'
-export default {
-  name: 'UserCard',
-  props: {
-    name: String,
-    email: String,
-    avatarUrl: String,
-  },
-  render() {
-    return h(
-      'div',
-      {
-        class: styles.userCard,
-      },
-      [
-        h('img', {
-          class: styles.avatar,
-          src: this.avatarUrl,
-          alt: 'User avatar',
-        }),
-        h(
-          'div',
-          {
-            class: styles.userInfo,
-          },
-          [h('h2', this.name), h('p', this.email)],
-        ),
-      ],
-    )
-  },
-}
-```
-
-至此我们就知道了，Vue 里面之所以提供模板的方式，是为了让开发者在描述视图的时候，更加的轻松。Vue 在运行的时候本身是不需要什么模板的，它只需要渲染函数，调用这些渲染函数后所得到的虚拟 DOM.
-
-作为一个框架的设计者，你必须要思考：你是框架少做一些，让用户的心智负担更重一些，还是说你的框架多做一些，让用户的心智负担更少一些。
-
-## 模板的编译
-
-**单文件组件中所书写的模板，对于模板编译器来讲，就是普通的字符串。**
-
-模板内容：
+简单回忆一下 keep-alive 的使用
 
 ```vue
 <template>
-  <div>
-    <h1 :id="someId">Hello</h1>
-  </div>
+  <Tab v-if="currentTab === 1">...</Tab>
+  <Tab v-if="currentTab === 2">...</Tab>
+  <Tab v-if="currentTab === 3">...</Tab>
 </template>
 ```
 
-对于模板编译器来讲，仅仅是一串字符串：
-
-```js
-'<template><div><h1 :id="someId">Hello</h1></div></template>'
-```
-
-模板编译器需要对上面的字符串进行操作，最终生成的结果：
-
-```js
-function render() {
-  return h('div', [h('h1', { id: someId }, 'Hello')])
-}
-```
-
-模板编译器在对模板字符串进行编译的时候，是一点一点转换而来的，整个过程：
-
-![image-20231113095532166](https://xiejie-typora.oss-cn-chengdu.aliyuncs.com/2023-11-13-015532.png)
-
-- 解析器：负责将模板字符串解析为对应的模板AST
-- 转换器：负责将模板AST转换为 JS AST
-- 生成器：将 JS AST 生成最终的渲染函数
-
-每一个部件都依赖于上一个部件的执行结果。
-
-假设有这么一段模板：
+根据变量 currentTab 值的不同，会渲染不同的 \<Tab> 组件。当用户频繁地切换 Tab 时，会导致不停地卸载并重建 \<Tab> 组件。为了避免因此产生的性能开销，可以使用 keep-alive 组件来解决这个问题：
 
 ```vue
-<div>
-	<p>Vue</p>
-  <p>React</p>
-</div>
+<template>
+  <keep-alive>
+    <Tab v-if="currentTab === 1">...</Tab>
+    <Tab v-if="currentTab === 2">...</Tab>
+    <Tab v-if="currentTab === 3">...</Tab>
+  </keep-alive>
+</template>
 ```
 
-对于模板编译器来讲，就是一段字符串：
+这样，无论用户怎样切换 \<Tab> 组件，都不会发生频繁的创建和销毁，因为会极大的优化对用户操作的响应，尤其是在大组件场景下，优势会更加明显。
 
-```js
-'<div><p>Vue</p><p>React</p></div>'
-```
+另外 keep-alive 还可以设计一些属性来进行细节方面的把控：
 
-首先是解析器，拿到这串字符串，对这个字符串进行解析，得到一个一个的 token.
+- include：指定要缓存的组件，支持的书写方式有**字符串、正则表达式、数组**
+- exclude：排除不缓存的组件
+- max：指定最大缓存组件数。如果缓存的实例数量即将超过指定的那个最大数量，则最久没有被访问的缓存实例将被销毁，以便为新的实例腾出空间。
 
-```js
-;[
-  { type: 'tag', name: 'div' },
-  { type: 'tag', name: 'p' },
-  { type: 'text', content: 'Vue' },
-  { type: 'tagEnd', name: 'p' },
-  { type: 'tag', name: 'p' },
-  { type: 'text', content: 'React' },
-  { type: 'tagEnd', name: 'p' },
-  { type: 'tagEnd', name: 'div' },
-]
-```
+**keep-alive生命周期**
 
-接下来解析器还需要根据所得到的 token 来生成抽象语法树（模板的AST）
+当一个组件挂载以及卸载的时候，是会触发相关的生命周期钩子方法。
 
-转换出来的 AST：
+当我们从组件 A 切换到组件 B 时，会依次出发：
 
-```js
-{
-  "type": "Root",
-  "children": [
-    {
-      "type": "Element",
-      "tag": "div",
-      "children": [
-        {
-          "type": "Element",
-          "tag": "p",
-          "children": [
-              {
-                "type": "Text",
-                "content": "Vue"
-              }
-          ]
-        },
-        {
-          "type": "Element",
-          "tag": "p",
-          "children": [
-              {
-                "type": "Text",
-                "content": "React"
-              }
-          ]
-        }
-      ]
-    }
-  ]
-}
-```
+- 组件 A beforeUnmount
+- 组件 B created
+- 组件 B beforeMount
+- 组件 A unmounted
+- 组件 B mounted
 
-至此解析器的工作就完成了。
+这就是没有使用 keep-alive 缓存的情况，组件频繁的创建、销毁，性能上面会有损耗。
 
-接下来就是转换器登场，它需要将上一步得到的模板 AST 转换为 JS AST：
+当我们添加 keep-alive 之后，组件得以缓存。但是这也带来一个新的问题，就是我们不知道该组件是否处于激活状态。比如某些场景下，我们需要组件激活时执行某些任务，但是因为目前组件被缓存了，上面的那些生命周期钩子方法都不会再次执行了。
 
-```js
-{
-  "type": "FunctionDecl",
-  "id": {
-      "type": "Identifier",
-      "name": "render"
-  },
-  "params": [],
-  "body": [
-      {
-          "type": "ReturnStatement",
-          "return": {
-              "type": "CallExpression",
-              "callee": {"type": "Identifier", "name": "h"},
-              "arguments": [
-                  { "type": "StringLiteral", "value": "div"},
-                  {"type": "ArrayExpression","elements": [
-                        {
-                            "type": "CallExpression",
-                            "callee": {"type": "Identifier", "name": "h"},
-                            "arguments": [
-                                {"type": "StringLiteral", "value": "p"},
-                                {"type": "StringLiteral", "value": "Vue"}
-                            ]
-                        },
-                        {
-                            "type": "CallExpression",
-                            "callee": {"type": "Identifier", "name": "h"},
-                            "arguments": [
-                                {"type": "StringLiteral", "value": "p"},
-                                {"type": "StringLiteral", "value": "React"}
-                            ]
-                        }
-                    ]
-                  }
-              ]
-          }
-      }
-  ]
-}
-```
+此时，和 keep-alive 相关的两个生命周期钩子方法可以解决这个问题：
 
-最后就是生成器，根据上一步所得到的 JS AST，生成具体的 JS 代码：
-
-```js
-function render() {
-  return h('div', [h('p', 'Vue'), h('p', 'React')])
-}
-```
-
-下面是一个模板编译器大致的结构：
-
-```js
-function compile(template) {
-  // 1. 解析器
-  const ast = parse(template)
-  // 2. 转换器：将模板 AST 转换为 JS AST
-  transform(ast)
-  // 3. 生成器
-  const code = genrate(ast)
-
-  return code
-}
-```
-
-## 编译的时机
-
-整体来讲会有两种情况：
-
-1. 运行时编译
-2. 预编译
-
-**1. 运行时编译**
-
-例如下面的代码，是直接通过 CDN 的方式引入的 Vue
-
-```html
-<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Document</title>
-    <style>
-      .user-card {
-        display: flex;
-        align-items: center;
-        background-color: #f9f9f9;
-        border: 1px solid #e0e0e0;
-        border-radius: 10px;
-        padding: 10px;
-        margin: 10px 0;
-      }
-      .avatar {
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        margin-right: 15px;
-      }
-      .user-info h2 {
-        margin: 0;
-        font-size: 20px;
-        color: #333;
-      }
-      .user-info p {
-        margin: 5px 0 0;
-        font-size: 16px;
-        color: #666;
-      }
-    </style>
-  </head>
-  <body>
-    <!-- 书写模板 -->
-    <div id="app">
-      <user-card :name="name" :email="email" :avatar-url="avatarUrl" />
-    </div>
-
-    <template id="user-card-template">
-      <div class="user-card">
-        <img :src="avatarUrl" alt="User avatar" class="avatar" />
-        <div class="user-info">
-          <h2>{{ name }}</h2>
-          <p>{{ email }}</p>
-        </div>
-      </div>
-    </template>
-
-    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
-    <script>
-      const { createApp } = Vue
-
-      const UserCard = {
-        name: 'UserCard',
-        props: {
-          name: String,
-          email: String,
-          avatarUrl: String,
-        },
-        template: '#user-card-template',
-      }
-
-      createApp({
-        components: {
-          UserCard,
-        },
-        data() {
-          return {
-            name: 'John Doe',
-            email: 'john@example',
-            avatarUrl: './yinshi.jpg',
-          }
-        },
-      }).mount('#app')
-    </script>
-  </body>
-</html>
-```
-
-在上面的例子中，也会涉及到模板代码以及模板的编译，那么此时的模板编译就是在运行时进行的。
-
-**2. 预编译**
-
-预编译是发生在工程化环境下面。
-
-所谓预编译，指的是工程打包过程中就完成了模板的编译工作，浏览器拿到的是打包后的代码，是完全没有模板的。
-
-这里推荐一个插件：vite-plugin-inspect
-
-安装该插件后在 vite.config.js 配置文件中简单配置一下：
-
-```js
-// vite.config.js
-import Inspect from 'vite-plugin-inspect'
-
-export default {
-  plugins: [Inspect()],
-}
-```
-
-之后就可以在 http://localhost:5173/\_\_inspect/ 里面看到每一个组件编译后的结果。
+- onActivated：首次挂载，以及组件激活时触发
+- onDeactivated：组件卸载，以及组件失活时触发
 
 ---
 
